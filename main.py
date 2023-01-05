@@ -183,6 +183,29 @@ class Player(AnimatedSprite):
         self.y += self.vel * self.movey / FPS
         self.rect.centerx = self.x
         self.rect.centery = self.y
+        if self.rect.colliderect(tborder.rect):
+            self.rect.y = 0
+            self.y = self.rect.centery
+        elif self.rect.colliderect(bborder.rect):
+            self.rect.y = screen_size[1] - self.rect.size[1]
+            self.y = self.rect.centery
+        if self.rect.colliderect(lborder.rect):
+            self.rect.x = 0
+            self.x = self.rect.centerx
+        elif self.rect.colliderect(rborder.rect):
+            self.rect.x = screen_size[0] - self.rect.size[0]
+            self.x = self.rect.centerx
+
+
+class Border(pygame.sprite.Sprite):
+    def __init__(self, x1, y1, x2, y2):
+        super().__init__(sprite_group)
+        if x1 == x2:
+            self.image = pygame.Surface([1, y2 - y1])
+            self.rect = pygame.Rect(x1, y1, 1, y2 - y1)
+        else:
+            self.image = pygame.Surface([x2 - x1, 1])
+            self.rect = pygame.Rect(x1, y1, x2 - x1, 1)
 
 
 # инициализация переменных в игре
@@ -200,6 +223,10 @@ start = None
 player = None
 start_sound = pygame.mixer.Sound("data/snd_start.ogg")
 scene_objects = []
+tborder = Border(-1, -1, screen_size[0] + 1, -1)
+bborder = Border(-1, screen_size[1] + 1, screen_size[0] + 1, screen_size[1] + 1)
+lborder = Border(-1, -1, -1, screen_size[1] + 1)
+rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 
 
 # инициализация и воспроизведение работы экрана запуска игры
@@ -252,6 +279,7 @@ def game():
     pygame.mixer.music.load('data/mus_acid_cool.wav')
     pygame.mixer.music.play(-1)
 
+    active = [False, False, False, False]
     while running and state == "game":
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -259,20 +287,24 @@ def game():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
                     player.movey += -1
+                    active[0] = True
                 if event.key == pygame.K_DOWN:
                     player.movey += 1
+                    active[1] = True
                 if event.key == pygame.K_LEFT:
                     player.movex += -1
+                    active[2] = True
                 if event.key == pygame.K_RIGHT:
                     player.movex += 1
+                    active[3] = True
             elif event.type == pygame.KEYUP:
-                if event.key == pygame.K_UP:
+                if event.key == pygame.K_UP and active[0]:
                     player.movey -= -1
-                if event.key == pygame.K_DOWN:
+                if event.key == pygame.K_DOWN and active[1]:
                     player.movey -= 1
-                if event.key == pygame.K_LEFT:
+                if event.key == pygame.K_LEFT and active[2]:
                     player.movex -= -1
-                if event.key == pygame.K_RIGHT:
+                if event.key == pygame.K_RIGHT and active[3]:
                     player.movex -= 1
         time += 1 / FPS
         bgrnd.update()
