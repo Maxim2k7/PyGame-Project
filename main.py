@@ -50,6 +50,30 @@ class Sprite(pygame.sprite.Sprite):
         pass
 
 
+class AnimatedSprite(pygame.sprite.Sprite):
+    def __init__(self, sheet, columns, rows, x, y, group, speed):
+        super().__init__(group)
+        self.frames = []
+        self.cut_sheet(sheet, columns, rows)
+        self.cur_frame = 0
+        self.image = self.frames[self.cur_frame]
+        self.rect = self.rect.move(x, y)
+        self.speed = speed
+
+    def cut_sheet(self, sheet, columns, rows):
+        self.rect = pygame.Rect(0, 0, sheet.get_width() // columns, sheet.get_height() // rows)
+        for j in range(rows):
+            for i in range(columns):
+                frame_location = (self.rect.w * i, self.rect.h * j)
+                self.frames.append(sheet.subsurface(pygame.Rect(frame_location, self.rect.size)))
+
+    def update(self):
+        self.cur_frame += self.speed / FPS
+        if self.cur_frame >= len(self.frames):
+            self.cur_frame -= (int(self.cur_frame) // len(self.frames)) * len(self.frames)
+        self.image = self.frames[int(self.cur_frame)]
+
+
 # переход от сцены к сцене
 class Fade_Transition(Sprite):
     def __init__(self, image, spd):
@@ -140,10 +164,9 @@ class Start_Game(Sprite):
 
 
 # классы для основной игры
-class Player(Sprite):
-    def __init__(self, x, y, image, vel):
-        super().__init__(player_group)
-        self.image = image
+class Player(AnimatedSprite):
+    def __init__(self, sheet, columns, rows, x, y, group, speed, vel):
+        super().__init__(sheet, columns, rows, x, y, group, speed)
         self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_bounding_rect()
         self.x = x
@@ -155,32 +178,11 @@ class Player(Sprite):
         self.vel = vel
 
     def update(self):
+        super().update()
         self.x += self.vel * self.movex / FPS
         self.y += self.vel * self.movey / FPS
         self.rect.centerx = self.x
         self.rect.centery = self.y
-        #Smoke(self.x, self.y + 50, load_image("ship_smoke.png", -1), 300)
-
-
-"""
-class Smoke(Sprite):
-    def __init__(self, x, y, image, vel):
-        super().__init__(sprite_group)
-        self.orig_im = image
-        self.image = image
-        self.rect = self.image.get_bounding_rect()
-        self.x = x
-        self.y = y
-        self.rect.centerx = x
-        self.rect.centery = y
-        self.vel = vel
-
-    def update(self):
-        self.y += self.vel / FPS
-        self.rect.centery = self.y
-        if not self.rect.colliderect(screen_rect):
-            self.kill()
-"""
 
 
 # инициализация переменных в игре
@@ -196,6 +198,7 @@ clock = pygame.time.Clock()
 logo = None
 start = None
 player = None
+start_sound = pygame.mixer.Sound("data/snd_start.ogg")
 scene_objects = []
 
 
@@ -220,6 +223,7 @@ def start_screen():
                     logo.d_time = 0
                     fade.fade = -1
                     pygame.mixer.music.stop()
+                    pygame.mixer.Sound.play(start_sound)
         time += 1 / FPS
         bgrnd.update()
         sprite_group.update()
@@ -241,7 +245,8 @@ def start_screen():
 # инициализация и воспроизведение работы игры
 def game():
     global player, scene_objects, running, state, time
-    player = Player(screen_size[0] // 2, screen_size[1] // 2, load_image("player_ship.png", -1), 200)
+    player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
+                    screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 200)
     scene_objects = [player]
 
     pygame.mixer.music.load('data/mus_acid_cool.wav')
