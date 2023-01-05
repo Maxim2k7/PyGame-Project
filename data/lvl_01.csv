@@ -1,0 +1,4 @@
+time	type	x	y	vel	rot_spd
+3000	star	200	-100	250	60
+5000	star	824	-100	300	60
+8000	star	512	-100	350	60

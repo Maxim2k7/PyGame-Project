@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import pygame
 import os
 import sys
@@ -134,23 +135,22 @@ class Back_Ground:
 
 # классы для начального экрана игры
 class Logo(Sprite):
-    def __init__(self, image, d_time):
+    def __init__(self, image):
         super().__init__(sprite_group)
         self.orig_im = image
         self.image = image
         self.rect = self.image.get_rect()
         self.xsize = self.image.get_size()[0]
         self.ysize = self.image.get_size()[1]
-        self.time = 0
-        self.d_time = d_time
+        self.stop = False
 
     def update(self):
-        self.time += self.d_time / FPS
-        self.image = pygame.transform.scale(self.orig_im, (int(self.xsize * (math.sin(self.time) + 10) / 10),
-                                                           int(self.ysize * (math.sin(self.time) + 10) / 10)))
-        self.rect = self.image.get_rect()
-        self.rect.centerx = screen_size[0] // 2
-        self.rect.centery = screen_size[1] // 2
+        if not self.stop:
+            self.image = pygame.transform.scale(self.orig_im, (int(self.xsize * (math.sin(time / 1000) + 10) / 10),
+                                                           int(self.ysize * (math.sin(time / 1000) + 10) / 10)))
+            self.rect = self.image.get_rect()
+            self.rect.centerx = screen_size[0] // 2
+            self.rect.centery = screen_size[1] // 2
 
 
 class Start_Game(Sprite):
@@ -208,15 +208,46 @@ class Border(pygame.sprite.Sprite):
             self.rect = pygame.Rect(x1, y1, x2 - x1, 1)
 
 
+class Star(Sprite):
+    def __init__(self, x, y, vel, rot_spd):
+        super().__init__(enemies_group)
+        self.image = star_image
+        self.color_key = star_image.get_colorkey()
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.centery = y
+        self.x = x
+        self.y = y
+        self.vel = vel
+        self.rot_spd = rot_spd
+        self.rot = 0
+
+    def update(self):
+        self.y += self.vel / FPS
+        self.rot += self.rot_spd / FPS
+        if self.vel > 0:
+            self.vel -= 100 / FPS
+        else:
+            self.vel = 0
+        self.image = pygame.transform.rotate(star_image, self.rot)
+        self.image.set_colorkey(self.color_key)
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
+
+
 # инициализация переменных в игре
 sprite_group = SpriteGroup()
 player_group = SpriteGroup()
+enemies_group = SpriteGroup()
 overlap_group = SpriteGroup()
 running = True
 state = "start_screen"
 time = 0
 bgrnd = Back_Ground(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
 fade = Fade_Transition(pygame.transform.scale(load_image('fade_transition.png'), screen_size), 255)
+star_image = load_image("star_normal.png", -1)
+star_anim = load_image("star_breaking_anim_sheet.png", -1)
+star_piece = load_image("star_piece.png", -1)
 clock = pygame.time.Clock()
 logo = None
 start = None
@@ -232,7 +263,7 @@ rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 # инициализация и воспроизведение работы экрана запуска игры
 def start_screen():
     global logo, start, scene_objects, running, state, time
-    logo = Logo(load_image('ttl_logo.png'), 1)
+    logo = Logo(load_image('ttl_logo.png'))
     start = Start_Game(load_image('ttl_start.png', 0))
     scene_objects = [logo, start]
 
@@ -244,17 +275,16 @@ def start_screen():
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN:
+                if event.key == pygame.K_RETURN and fade.fade == 0:
                     start.image.set_alpha(0)
                     bgrnd.vel = 0
-                    logo.d_time = 0
+                    logo.stop = True
                     fade.fade = -1
                     pygame.mixer.music.stop()
                     pygame.mixer.Sound.play(start_sound)
-        time += 1 / FPS
+        time += 1000 / FPS
         bgrnd.update()
         sprite_group.update()
-        player_group.update()
         overlap_group.update("game")
         if fade.loaded:
             start.image.set_alpha(255)
@@ -275,7 +305,10 @@ def game():
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 200)
     scene_objects = [player]
-
+    import csv
+    with open('data/lvl_01.csv', encoding="utf8") as csvfile:
+        reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
+        attacks = list(reader)
     pygame.mixer.music.load('data/mus_acid_cool.wav')
     pygame.mixer.music.play(-1)
 
@@ -306,13 +339,23 @@ def game():
                     player.movex -= -1
                 if event.key == pygame.K_RIGHT and active[3]:
                     player.movex -= 1
-        time += 1 / FPS
+        time += 1000 / FPS
+        performed = []
+        for attack in attacks:
+            if int(attack["time"]) <= time:
+                if attack["type"] == "star":
+                    Star(int(attack["x"]), int(attack["y"]), int(attack["vel"]), int(attack["rot_spd"]))
+                performed.append(attack)
+        for attack in performed:
+            attacks.remove(attack)
         bgrnd.update()
         sprite_group.update()
         player_group.update()
+        enemies_group.update()
         overlap_group.update("game")
         sprite_group.draw(screen)
         player_group.draw(screen)
+        enemies_group.draw(screen)
         overlap_group.draw(screen)
         clock.tick(FPS)
         pygame.display.flip()
