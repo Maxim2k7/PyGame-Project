@@ -245,7 +245,7 @@ class Player(AnimatedSprite):
             projectile.kill()
 
 
-class HealthBar(Sprite):
+class HealthBar(pygame.sprite.Sprite):
     def __init__(self, sheet, columns, rows, x, y, group):
         super().__init__(group)
         self.frames = []
@@ -490,21 +490,54 @@ def game():
             if obj.rect is not None:
                 camera.apply(obj)
         screen.fill(pygame.Color("black"))
-        all_sprites.draw(screen)
+        sprite_group.draw(screen)
+        player_group.draw(screen)
+        enemies_group.draw(screen)
+        overlap_group.draw(screen)
         clock.tick(FPS)
         pygame.display.flip()
         camera.update((-camera.x, -camera.y))
         for obj in all_sprites:
             if obj.rect is not None:
                 camera.apply(obj)
+    pygame.mixer.music.stop()
+    pygame.mixer.Sound(hit_sound).stop()
+    pygame.mixer.Sound(star_explode_sound).stop()
     player = None
-    fade.fade = 1
     bgrnd.vel = 50
     time = 0
+
+
+def game_over():
+    global scene_objects, running, state, time
+    scene_objects = []
+
+    pygame.mixer.Sound(die_sound).play()
+    while running and state == "game_over":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_z and fade.fade == 0:
+                    #start.image.set_alpha(0)
+                    bgrnd.vel = 0
+                    #logo.stop = True
+                    fade.fade = -1
+                    pygame.mixer.music.stop()
+                    pygame.mixer.Sound.play(start_sound)
+        screen.fill(pygame.color.Color("Black"))
+        time += 1000 / FPS
+    state = "game"
+
 
 
 # запуск действий
 if __name__ == "__main__":
     start_screen()
-    game()
+    while running:
+        game()
+        if state == "game_over":
+            game_over()
+        #else:
+            #game_won()
     pygame.quit()
