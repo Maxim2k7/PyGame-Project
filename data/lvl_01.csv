@@ -17,3 +17,4 @@ time	type	x	y	vel	rot_spd
 9000	star	700	-100	250	210
 9500	star	800	-100	250	220
 10000	star	900	-100	250	230
+20000	win

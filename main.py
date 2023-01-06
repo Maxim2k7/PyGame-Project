@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import pygame
 import os
-import sys
 import math
 import random
 
@@ -11,11 +10,6 @@ screen_size = (1024, 768)
 screen = pygame.display.set_mode(screen_size)
 screen_rect = (0, 0, screen_size[0], screen_size[1])
 FPS = 30
-
-
-def terminate():
-    pygame.quit()
-    sys.exit
 
 
 def load_image(name, color_key=None):
@@ -146,6 +140,10 @@ class BackGround:
         self.pic1.rect.y = int(self.y)
         self.pic2.rect.y = int(self.y) - screen_size[1]
 
+    def kill(self):
+        self.pic1.kill()
+        self.pic2.kill()
+
 
 # классы для начального экрана игры
 class Logo(Sprite):
@@ -228,22 +226,28 @@ class Player(AnimatedSprite):
             self.shake_dist = 0
 
     def check_hit(self, projectile):
-        offset_x = int(projectile.x - self.x)
-        offset_y = int(projectile.y - self.y)
+        offset_x = int(projectile.rect.centerx - self.rect.centerx)
+        offset_y = int(projectile.rect.centery - self.rect.centery)
         if self.mask.overlap(self.mask, (offset_x, offset_y)):
             if not self.inv:
                 if health_bar.health > 1:
                     health_bar.health -= 1
+                    pygame.mixer.Sound.play(hit_sound)
+                    self.inv = True
+                    self.hit_t = time
+                    self.shake_dist = 20
                 else:
-                    health_bar.health = 0
-                    global state
-                    state = "game_over"
-                pygame.mixer.Sound.play(hit_sound)
-                self.inv = True
-                self.hit_t = time
-                self.shake_dist = 20
-            projectile.kill()
+                    self.die()
+                projectile.kill()
 
+    def die(self):
+        health_bar.health = 0
+        global state, next_state
+        state = "game_over"
+        next_state = "game"
+
+    def win(self):
+        pass
 
 class HealthBar(pygame.sprite.Sprite):
     def __init__(self, sheet, columns, rows, x, y, group):
@@ -308,6 +312,7 @@ class Star(Sprite):
                 self.rot_spd -= self.rot_accel / FPS
             else:
                 self.rot_spd = 0
+                pygame.mixer.Sound.stop(star_explode_sound)
                 pygame.mixer.Sound.play(star_explode_sound)
                 for i in range(5):
                     StarPiece(self.x, self.y, 400, i * 72 + self.rot)
@@ -361,9 +366,12 @@ enemies_group = SpriteGroup()
 overlap_group = SpriteGroup()
 running = True
 state = "start_screen"
+next_state = "game"
 time = 0
+black = pygame.transform.scale(load_image('fade_transition.png'), screen_size)
+white = pygame.transform.scale(load_image('fade_transition2.png'), screen_size)
 bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
-fade = FadeTransition(pygame.transform.scale(load_image('fade_transition.png'), screen_size), 255)
+fade = FadeTransition(black, 256)
 star_image = load_image("star_normal.png")
 star_mask_image = load_image("star_mask.png")
 star_anim = load_image("star_breaking_anim_sheet.png")
@@ -376,19 +384,27 @@ player = None
 health_bar = None
 start_sound = pygame.mixer.Sound("data/snd_start.ogg")
 hit_sound = pygame.mixer.Sound("data/snd_hit.ogg")
-die_sound = pygame.mixer.Sound("data/snd_die.ogg")
 star_explode_sound = pygame.mixer.Sound("data/snd_starexplode.ogg")
+die_sound = pygame.mixer.Sound("data/snd_die.ogg")
+revive_sound = pygame.mixer.Sound("data/snd_revive.ogg")
 scene_objects = []
 camera = Camera()
 tborder = Border(-1, -1, screen_size[0] + 1, -1)
 bborder = Border(-1, screen_size[1] + 1, screen_size[0] + 1, screen_size[1] + 1)
 lborder = Border(-1, -1, -1, screen_size[1] + 1)
 rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
+levels = 2
+player_data_read = open("data/player_data.ini", mode="r")
+data = [list(i.split("=")) for i in player_data_read.read().split("\n")]
+data_dict = dict()
+for i in data:
+    data_dict[i[0]] = i[1]
+player_data_read.close()
 
 
 # инициализация и воспроизведение работы экрана запуска игры
 def start_screen():
-    global logo, start, scene_objects, running, state, time
+    global logo, start, scene_objects, running, state, next_state, time
     logo = Logo(load_image('ttl_logo.png'))
     start = StartGame(load_image('ttl_start.png', 0))
     scene_objects = [logo, start]
@@ -411,7 +427,7 @@ def start_screen():
         time += 1000 / FPS
         bgrnd.update()
         sprite_group.update()
-        overlap_group.update("game")
+        overlap_group.update(next_state)
         if fade.loaded:
             start.image.set_alpha(255)
             fade.loaded = False
@@ -419,25 +435,28 @@ def start_screen():
         overlap_group.draw(screen)
         clock.tick(FPS)
         pygame.display.flip()
-    logo = None
-    start = None
     fade.fade = 1
     bgrnd.vel = 50
     time = 0
+    next_state = "game_over"
 
 
 # инициализация и воспроизведение работы игры
 def game():
-    global player, health_bar, scene_objects, running, state, time
+    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
     health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
-    scene_objects = [player, health_bar]
+    scene_objects = [health_bar]
     import csv
-    with open('data/lvl_02.csv', encoding="utf8") as csvfile:
-        reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
-        attacks = list(reader)
+    try:
+        with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
+            reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
+            actions = list(reader)
+    except pygame.error as message:
+        print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
+        raise SystemExit(message)
     pygame.mixer.music.load('data/mus_acid_cool.wav')
     pygame.mixer.music.play(-1)
 
@@ -474,18 +493,23 @@ def game():
                     player.slow = False
         time += 1000 / FPS
         performed = []
-        for attack in attacks:
-            if int(attack["time"]) <= time:
-                if attack["type"] == "star":
-                    Star(int(attack["x"]), int(attack["y"]), int(attack["vel"]), int(attack["rot_spd"]))
-                performed.append(attack)
-        for attack in performed:
-            attacks.remove(attack)
+        for action in actions:
+            if int(action["time"]) <= time:
+                if action["type"] == "star":
+                    Star(int(action["x"]), int(action["y"]), int(action["vel"]), int(action["rot_spd"]))
+                if action["type"] == "win":
+                    next_state = "game"
+                    state = "win"
+                    if int(data_dict["lvl"]) < levels:
+                        data_dict["lvl"] = str(int(data_dict["lvl"]) + 1)
+                performed.append(action)
+        for action in performed:
+            actions.remove(action)
         bgrnd.update()
         sprite_group.update()
         player_group.update()
         enemies_group.update()
-        overlap_group.update("game_over")
+        overlap_group.update(next_state)
         for obj in all_sprites:
             if obj.rect is not None:
                 camera.apply(obj)
@@ -501,15 +525,23 @@ def game():
             if obj.rect is not None:
                 camera.apply(obj)
     pygame.mixer.music.stop()
-    pygame.mixer.Sound(hit_sound).stop()
-    pygame.mixer.Sound(star_explode_sound).stop()
-    player = None
+    pygame.mixer.Sound.stop(hit_sound)
+    pygame.mixer.Sound.stop(star_explode_sound)
     bgrnd.vel = 50
     time = 0
+    for obj in scene_objects:
+        obj.kill()
 
 
 def game_over():
-    global scene_objects, running, state, time
+    global player, bgrnd, scene_objects, running, state, next_state, time
+    broken_ship = pygame.sprite.Sprite(sprite_group)
+    broken_ship.image = load_image("player_ship_broken.png", -1)
+    broken_ship.rect = broken_ship.image.get_rect().move((player.rect.x, player.rect.y))
+    bgrnd.kill()
+    fade.spd = 200
+    fade.image = white
+    fade.image.set_alpha(0)
     scene_objects = []
 
     pygame.mixer.Sound(die_sound).play()
@@ -519,16 +551,60 @@ def game_over():
                 running = False
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_z and fade.fade == 0:
-                    #start.image.set_alpha(0)
-                    bgrnd.vel = 0
-                    #logo.stop = True
                     fade.fade = -1
                     pygame.mixer.music.stop()
-                    pygame.mixer.Sound.play(start_sound)
-        screen.fill(pygame.color.Color("Black"))
+                    pygame.mixer.Sound.play(revive_sound)
+        screen.fill(pygame.Color("Black"))
         time += 1000 / FPS
-    state = "game"
+        sprite_group.update()
+        overlap_group.update(next_state)
+        sprite_group.draw(screen)
+        overlap_group.draw(screen)
+        clock.tick(FPS)
+        pygame.display.flip()
+    time = 0
+    fade.fade = 1
+    broken_ship.kill()
+    player.kill()
+    bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+    fade.spd = 256
 
+
+def game_won():
+    global player, bgrnd, scene_objects, running, state, next_state, time
+    broken_ship = pygame.sprite.Sprite(sprite_group)
+    broken_ship.image = load_image("player_ship_broken.png", -1)
+    broken_ship.rect = broken_ship.image.get_rect().move((player.rect.x, player.rect.y))
+    bgrnd.kill()
+    fade.spd = 200
+    fade.image = white
+    fade.image.set_alpha(0)
+    scene_objects = []
+
+    pygame.mixer.Sound(die_sound).play()
+    while running and state == "win":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_z and fade.fade == 0:
+                    fade.fade = -1
+                    pygame.mixer.music.stop()
+                    pygame.mixer.Sound.play(revive_sound)
+        screen.fill(pygame.Color("Purple"))
+        time += 1000 / FPS
+        sprite_group.update()
+        overlap_group.update(next_state)
+        sprite_group.draw(screen)
+        overlap_group.draw(screen)
+        clock.tick(FPS)
+        pygame.display.flip()
+    time = 0
+    fade.fade = 1
+    broken_ship.kill()
+    player.kill()
+    bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+    fade.spd = 256
 
 
 # запуск действий
@@ -538,6 +614,12 @@ if __name__ == "__main__":
         game()
         if state == "game_over":
             game_over()
-        #else:
-            #game_won()
+        else:
+            game_won()
     pygame.quit()
+    player_data_write = open("data/player_data.ini", mode="w")
+    res_str = []
+    for k, v in data_dict.items():
+        res_str.append(k + "=" + v)
+    player_data_write.write("\n".join(res_str))
+    player_data_write.close()
