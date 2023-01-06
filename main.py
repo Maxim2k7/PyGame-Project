@@ -3,7 +3,7 @@ import pygame
 import os
 import sys
 import math
-
+import random
 
 # глобальные параметры, функции и объекты для игры
 pygame.init()
@@ -45,15 +45,14 @@ class SpriteGroup(pygame.sprite.Group):
 class Sprite(pygame.sprite.Sprite):
     def __init__(self, group):
         super().__init__(group)
+        self.add(all_sprites)
         self.rect = None
-
-    def get_event(self, event):
-        pass
 
 
 class AnimatedSprite(pygame.sprite.Sprite):
     def __init__(self, sheet, columns, rows, x, y, group, speed):
         super().__init__(group)
+        self.add(all_sprites)
         self.frames = []
         self.cut_sheet(sheet, columns, rows)
         self.cur_frame = 0
@@ -75,8 +74,22 @@ class AnimatedSprite(pygame.sprite.Sprite):
         self.image = self.frames[int(self.cur_frame)]
 
 
+class Camera:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+
+    def apply(self, obj):
+        obj.rect.x += self.x
+        obj.rect.y += self.y
+
+    def update(self, target):
+        self.x = target[0]
+        self.y = target[1]
+
+
 # переход от сцены к сцене
-class Fade_Transition(Sprite):
+class FadeTransition(Sprite):
     def __init__(self, image, spd):
         super().__init__(overlap_group)
         self.image = image
@@ -90,6 +103,7 @@ class Fade_Transition(Sprite):
             self.fade_in()
         elif self.fade == -1:
             self.fade_out(next_state)
+
     def fade_in(self):
         a = self.image.get_alpha() - self.spd / FPS
         if a <= 0:
@@ -111,17 +125,17 @@ class Fade_Transition(Sprite):
 
 
 # части заднего плана
-class Back_Ground_Part(Sprite):
+class BackGroundPart(Sprite):
     def __init__(self, image):
         super().__init__(sprite_group)
         self.image = image
         self.rect = self.image.get_rect()
 
 
-class Back_Ground:
+class BackGround:
     def __init__(self, image, vel):
-        self.pic1 = Back_Ground_Part(image)
-        self.pic2 = Back_Ground_Part(image)
+        self.pic1 = BackGroundPart(image)
+        self.pic2 = BackGroundPart(image)
         self.y = 0
         self.lim = screen_size[1]
         self.vel = vel
@@ -147,13 +161,13 @@ class Logo(Sprite):
     def update(self):
         if not self.stop:
             self.image = pygame.transform.scale(self.orig_im, (int(self.xsize * (math.sin(time / 1000) + 10) / 10),
-                                                           int(self.ysize * (math.sin(time / 1000) + 10) / 10)))
+                                                               int(self.ysize * (math.sin(time / 1000) + 10) / 10)))
             self.rect = self.image.get_rect()
             self.rect.centerx = screen_size[0] // 2
             self.rect.centery = screen_size[1] // 2
 
 
-class Start_Game(Sprite):
+class StartGame(Sprite):
     def __init__(self, image):
         super().__init__(sprite_group)
         self.image = image
@@ -165,10 +179,10 @@ class Start_Game(Sprite):
 
 # классы для основной игры
 class Player(AnimatedSprite):
-    def __init__(self, sheet, columns, rows, x, y, group, speed, vel):
+    def __init__(self, sheet, columns, rows, x, y, group, speed, vel, inv_t, mask):
         super().__init__(sheet, columns, rows, x, y, group, speed)
-        self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_bounding_rect()
+        self.mask = mask
         self.x = x
         self.y = y
         self.rect.centerx = x
@@ -176,6 +190,10 @@ class Player(AnimatedSprite):
         self.movex = 0
         self.movey = 0
         self.vel = vel
+        self.inv = False
+        self.inv_t = inv_t
+        self.hit_t = -inv_t
+        self.shake_dist = 0
 
     def update(self):
         super().update()
@@ -195,6 +213,29 @@ class Player(AnimatedSprite):
         elif self.rect.colliderect(rborder.rect):
             self.rect.x = screen_size[0] - self.rect.size[0]
             self.x = self.rect.centerx
+        if self.inv:
+            self.image.set_alpha(255 - self.image.get_alpha())
+            if time - self.hit_t > self.inv_t:
+                self.inv = False
+        else:
+            self.image.set_alpha(255)
+        camera.update((random.randint(int(-self.shake_dist), int(self.shake_dist)),
+                       random.randint(int(-self.shake_dist), int(self.shake_dist))))
+        if self.shake_dist > 0:
+            self.shake_dist -= 20 / FPS
+        else:
+            self.shake_dist = 0
+
+    def check_hit(self, projectile):
+        offset_x = int(projectile.x - self.x)
+        offset_y = int(projectile.y - self.y)
+        if self.mask.overlap(self.mask, (offset_x, offset_y)):
+            if not self.inv:
+                pygame.mixer.Sound.play(hit_sound)
+                self.inv = True
+                self.hit_t = time
+                self.shake_dist = 20
+            projectile.kill()
 
 
 class Border(pygame.sprite.Sprite):
@@ -212,7 +253,9 @@ class Star(Sprite):
     def __init__(self, x, y, vel, rot_spd):
         super().__init__(enemies_group)
         self.image = star_image
-        self.color_key = star_image.get_colorkey()
+        self.mask_image = star_mask_image
+        self.color_key = star_image.get_at((0, 0))
+        self.mask = pygame.mask.from_surface(self.mask_image)
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.centery = y
@@ -221,21 +264,66 @@ class Star(Sprite):
         self.vel = vel
         self.rot_spd = rot_spd
         self.rot = 0
+        self.accel = self.vel / 2.5
+        self.rot_accel = self.rot_spd
 
     def update(self):
         self.y += self.vel / FPS
         self.rot += self.rot_spd / FPS
+        if self.rot >= 360:
+            self.rot -= (int(self.rot) // 360) * 360
         if self.vel > 0:
-            self.vel -= 100 / FPS
+            self.vel -= self.accel / FPS
         else:
             self.vel = 0
+            if self.rot_spd > 0:
+                self.rot_spd -= self.rot_accel / FPS
+            else:
+                self.rot_spd = 0
+                pygame.mixer.Sound.play(star_explode_sound)
+                for i in range(5):
+                    StarPiece(self.x, self.y, 400, i * 72 + self.rot)
+                self.kill()
         self.image = pygame.transform.rotate(star_image, self.rot)
+        self.mask_image = pygame.transform.rotate(star_mask_image, self.rot)
         self.image.set_colorkey(self.color_key)
+        self.mask_image.set_colorkey(self.color_key)
+        self.mask = pygame.mask.from_surface(self.mask_image)
+        self.rect = self.image.get_rect()
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
+        player.check_hit(self)
+
+
+class StarPiece(Sprite):
+    def __init__(self, x, y, vel, rot):
+        super().__init__(enemies_group)
+        self.image = pygame.transform.rotate(star_piece_image, rot)
+        self.mask_image = pygame.transform.rotate(star_piece_mask_image, rot)
+        self.rect = self.image.get_rect()
+        self.color_key = star_piece_image.get_at((0, 0))
+        self.image.set_colorkey(self.color_key)
+        self.mask = pygame.mask.from_surface(self.mask_image)
+        self.rect.centerx = x
+        self.rect.centery = y
+        self.x = x
+        self.y = y
+        self.vel = vel
+        self.rot = rot / 360 * 2 * math.pi
+
+    def update(self):
+        self.vel += 800 / FPS
+        self.x -= math.sin(self.rot) * self.vel / FPS
+        self.y -= math.cos(self.rot) * self.vel / FPS
+        if not self.rect.colliderect(screen_rect):
+            self.kill()
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
+        player.check_hit(self)
 
 
 # инициализация переменных в игре
+all_sprites = SpriteGroup()
 sprite_group = SpriteGroup()
 player_group = SpriteGroup()
 enemies_group = SpriteGroup()
@@ -243,17 +331,23 @@ overlap_group = SpriteGroup()
 running = True
 state = "start_screen"
 time = 0
-bgrnd = Back_Ground(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
-fade = Fade_Transition(pygame.transform.scale(load_image('fade_transition.png'), screen_size), 255)
-star_image = load_image("star_normal.png", -1)
-star_anim = load_image("star_breaking_anim_sheet.png", -1)
-star_piece = load_image("star_piece.png", -1)
+bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+fade = FadeTransition(pygame.transform.scale(load_image('fade_transition.png'), screen_size), 255)
+star_image = load_image("star_normal.png")
+star_mask_image = load_image("star_mask.png")
+star_anim = load_image("star_breaking_anim_sheet.png")
+star_piece_image = load_image("star_piece.png")
+star_piece_mask_image = load_image("star_piece_mask.png")
 clock = pygame.time.Clock()
 logo = None
 start = None
 player = None
 start_sound = pygame.mixer.Sound("data/snd_start.ogg")
+hit_sound = pygame.mixer.Sound("data/snd_hit.ogg")
+die_sound = pygame.mixer.Sound("data/snd_die.ogg")
+star_explode_sound = pygame.mixer.Sound("data/snd_starexplode.ogg")
 scene_objects = []
+camera = Camera()
 tborder = Border(-1, -1, screen_size[0] + 1, -1)
 bborder = Border(-1, screen_size[1] + 1, screen_size[0] + 1, screen_size[1] + 1)
 lborder = Border(-1, -1, -1, screen_size[1] + 1)
@@ -264,7 +358,7 @@ rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 def start_screen():
     global logo, start, scene_objects, running, state, time
     logo = Logo(load_image('ttl_logo.png'))
-    start = Start_Game(load_image('ttl_start.png', 0))
+    start = StartGame(load_image('ttl_start.png', 0))
     scene_objects = [logo, start]
 
     pygame.mixer.music.load('data/mus_start_screen.wav')
@@ -297,16 +391,18 @@ def start_screen():
     start = None
     fade.fade = 1
     bgrnd.vel = 50
+    time = 0
 
 
 # инициализация и воспроизведение работы игры
 def game():
     global player, scene_objects, running, state, time
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
-                    screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 200)
+                    screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
+                    pygame.mask.from_surface(load_image("player_ship.png", -1)))
     scene_objects = [player]
     import csv
-    with open('data/lvl_01.csv', encoding="utf8") as csvfile:
+    with open('data/lvl_02.csv', encoding="utf8") as csvfile:
         reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
         attacks = list(reader)
     pygame.mixer.music.load('data/mus_acid_cool.wav')
@@ -352,16 +448,22 @@ def game():
         sprite_group.update()
         player_group.update()
         enemies_group.update()
-        overlap_group.update("game")
-        sprite_group.draw(screen)
-        player_group.draw(screen)
-        enemies_group.draw(screen)
-        overlap_group.draw(screen)
+        overlap_group.update("game_over")
+        for obj in all_sprites:
+            if obj.rect is not None:
+                camera.apply(obj)
+        screen.fill(pygame.Color("black"))
+        all_sprites.draw(screen)
         clock.tick(FPS)
         pygame.display.flip()
+        camera.update((-camera.x, -camera.y))
+        for obj in all_sprites:
+            if obj.rect is not None:
+                camera.apply(obj)
     player = None
     fade.fade = 1
     bgrnd.vel = 50
+    time = 0
 
 
 # запуск действий
