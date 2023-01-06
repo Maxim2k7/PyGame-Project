@@ -89,7 +89,7 @@ class Camera:
 
 
 # переход от сцены к сцене
-class FadeTransition(Sprite):
+class FadeTransition(pygame.sprite.Sprite):
     def __init__(self, image, spd):
         super().__init__(overlap_group)
         self.image = image
@@ -194,11 +194,12 @@ class Player(AnimatedSprite):
         self.inv_t = inv_t
         self.hit_t = -inv_t
         self.shake_dist = 0
+        self.slow = False
 
     def update(self):
         super().update()
-        self.x += self.vel * self.movex / FPS
-        self.y += self.vel * self.movey / FPS
+        self.x += self.vel * self.movex / FPS / (2 if self.slow else 1)
+        self.y += self.vel * self.movey / FPS / (2 if self.slow else 1)
         self.rect.centerx = self.x
         self.rect.centery = self.y
         if self.rect.colliderect(tborder.rect):
@@ -231,6 +232,12 @@ class Player(AnimatedSprite):
         offset_y = int(projectile.y - self.y)
         if self.mask.overlap(self.mask, (offset_x, offset_y)):
             if not self.inv:
+                if health_bar.health > 1:
+                    health_bar.health -= 1
+                else:
+                    health_bar.health = 0
+                    global state
+                    state = "game_over"
                 pygame.mixer.Sound.play(hit_sound)
                 self.inv = True
                 self.hit_t = time
@@ -238,7 +245,27 @@ class Player(AnimatedSprite):
             projectile.kill()
 
 
-class Border(pygame.sprite.Sprite):
+class HealthBar(Sprite):
+    def __init__(self, sheet, columns, rows, x, y, group):
+        super().__init__(group)
+        self.frames = []
+        self.cut_sheet(sheet, columns, rows)
+        self.health = 5
+        self.image = self.frames[5 - self.health]
+        self.rect = self.rect.move(x, y)
+
+    def cut_sheet(self, sheet, columns, rows):
+        self.rect = pygame.Rect(0, 0, sheet.get_width() // columns, sheet.get_height() // rows)
+        for j in range(rows):
+            for i in range(columns):
+                frame_location = (self.rect.w * i, self.rect.h * j)
+                self.frames.append(sheet.subsurface(pygame.Rect(frame_location, self.rect.size)))
+
+    def update(self):
+        self.image = self.frames[5 - self.health]
+
+
+class Border(Sprite):
     def __init__(self, x1, y1, x2, y2):
         super().__init__(sprite_group)
         if x1 == x2:
@@ -252,6 +279,7 @@ class Border(pygame.sprite.Sprite):
 class Star(Sprite):
     def __init__(self, x, y, vel, rot_spd):
         super().__init__(enemies_group)
+        scene_objects.append(self)
         self.image = star_image
         self.mask_image = star_mask_image
         self.color_key = star_image.get_at((0, 0))
@@ -283,6 +311,7 @@ class Star(Sprite):
                 pygame.mixer.Sound.play(star_explode_sound)
                 for i in range(5):
                     StarPiece(self.x, self.y, 400, i * 72 + self.rot)
+                scene_objects.remove(self)
                 self.kill()
         self.image = pygame.transform.rotate(star_image, self.rot)
         self.mask_image = pygame.transform.rotate(star_mask_image, self.rot)
@@ -298,6 +327,7 @@ class Star(Sprite):
 class StarPiece(Sprite):
     def __init__(self, x, y, vel, rot):
         super().__init__(enemies_group)
+        scene_objects.append(self)
         self.image = pygame.transform.rotate(star_piece_image, rot)
         self.mask_image = pygame.transform.rotate(star_piece_mask_image, rot)
         self.rect = self.image.get_rect()
@@ -316,6 +346,7 @@ class StarPiece(Sprite):
         self.x -= math.sin(self.rot) * self.vel / FPS
         self.y -= math.cos(self.rot) * self.vel / FPS
         if not self.rect.colliderect(screen_rect):
+            scene_objects.remove(self)
             self.kill()
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
@@ -342,6 +373,7 @@ clock = pygame.time.Clock()
 logo = None
 start = None
 player = None
+health_bar = None
 start_sound = pygame.mixer.Sound("data/snd_start.ogg")
 hit_sound = pygame.mixer.Sound("data/snd_hit.ogg")
 die_sound = pygame.mixer.Sound("data/snd_die.ogg")
@@ -369,7 +401,7 @@ def start_screen():
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN and fade.fade == 0:
+                if event.key == pygame.K_z and fade.fade == 0:
                     start.image.set_alpha(0)
                     bgrnd.vel = 0
                     logo.stop = True
@@ -396,11 +428,12 @@ def start_screen():
 
 # инициализация и воспроизведение работы игры
 def game():
-    global player, scene_objects, running, state, time
+    global player, health_bar, scene_objects, running, state, time
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
-    scene_objects = [player]
+    health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
+    scene_objects = [player, health_bar]
     import csv
     with open('data/lvl_02.csv', encoding="utf8") as csvfile:
         reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
@@ -426,6 +459,8 @@ def game():
                 if event.key == pygame.K_RIGHT:
                     player.movex += 1
                     active[3] = True
+                if event.key == pygame.K_x:
+                    player.slow = True
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_UP and active[0]:
                     player.movey -= -1
@@ -435,6 +470,8 @@ def game():
                     player.movex -= -1
                 if event.key == pygame.K_RIGHT and active[3]:
                     player.movex -= 1
+                if event.key == pygame.K_x:
+                    player.slow = False
         time += 1000 / FPS
         performed = []
         for attack in attacks:
