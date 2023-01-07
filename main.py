@@ -92,11 +92,11 @@ class FadeTransition(pygame.sprite.Sprite):
         self.loaded = False
         self.spd = spd
 
-    def update(self, next_state):
+    def update(self):
         if self.fade == 1:
             self.fade_in()
         elif self.fade == -1:
-            self.fade_out(next_state)
+            self.fade_out()
 
     def fade_in(self):
         a = self.image.get_alpha() - self.spd / FPS
@@ -106,14 +106,14 @@ class FadeTransition(pygame.sprite.Sprite):
             self.loaded = True
         self.image.set_alpha(int(a))
 
-    def fade_out(self, next_state):
+    def fade_out(self):
         a = self.image.get_alpha() + self.spd / FPS
         if a >= 255:
             self.fade = 0
             a = 255
             for obj in scene_objects:
                 obj.kill()
-            global state
+            global state, next_state
             state = next_state
         self.image.set_alpha(int(a))
 
@@ -427,7 +427,7 @@ def start_screen():
         time += 1000 / FPS
         bgrnd.update()
         sprite_group.update()
-        overlap_group.update(next_state)
+        overlap_group.update()
         if fade.loaded:
             start.image.set_alpha(255)
             fade.loaded = False
@@ -443,7 +443,7 @@ def start_screen():
 
 # инициализация и воспроизведение работы игры
 def game():
-    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels
+    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels, fade
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
@@ -498,8 +498,10 @@ def game():
                 if action["type"] == "star":
                     Star(int(action["x"]), int(action["y"]), int(action["vel"]), int(action["rot_spd"]))
                 if action["type"] == "win":
-                    next_state = "game"
-                    state = "win"
+                    next_state = "win"
+                    fade.fade = -1
+                    fade.image = white
+                    fade.image.set_alpha(0)
                     if int(data_dict["lvl"]) < levels:
                         data_dict["lvl"] = str(int(data_dict["lvl"]) + 1)
                 performed.append(action)
@@ -509,7 +511,7 @@ def game():
         sprite_group.update()
         player_group.update()
         enemies_group.update()
-        overlap_group.update(next_state)
+        overlap_group.update()
         for obj in all_sprites:
             if obj.rect is not None:
                 camera.apply(obj)
@@ -534,7 +536,7 @@ def game():
 
 
 def game_over():
-    global player, bgrnd, scene_objects, running, state, next_state, time
+    global player, bgrnd, scene_objects, running, state, next_state, time, fade
     broken_ship = pygame.sprite.Sprite(sprite_group)
     broken_ship.image = load_image("player_ship_broken.png", -1)
     broken_ship.rect = broken_ship.image.get_rect().move((player.rect.x, player.rect.y))
@@ -557,7 +559,7 @@ def game_over():
         screen.fill(pygame.Color("Black"))
         time += 1000 / FPS
         sprite_group.update()
-        overlap_group.update(next_state)
+        overlap_group.update()
         sprite_group.draw(screen)
         overlap_group.draw(screen)
         clock.tick(FPS)
@@ -571,17 +573,24 @@ def game_over():
 
 
 def game_won():
-    global player, bgrnd, scene_objects, running, state, next_state, time
-    broken_ship = pygame.sprite.Sprite(sprite_group)
-    broken_ship.image = load_image("player_ship_broken.png", -1)
-    broken_ship.rect = broken_ship.image.get_rect().move((player.rect.x, player.rect.y))
+    global player, bgrnd, scene_objects, running, state, next_state, time, fade, data_dict, levels
+    victory_screen = pygame.sprite.Sprite(sprite_group)
+    if int(data_dict["lvl"]) <= levels:
+        victory_screen.image = pygame.transform.scale(load_image("win_image.png", -1), screen_size)
+    else:
+        victory_screen.image = pygame.transform.scale(load_image("win_image.png", -1), screen_size)
+    victory_screen.rect = victory_screen.image.get_rect()
+    victory_screen.rect.centerx = screen_size[0] // 2
+    victory_screen.rect.centery = screen_size[1] // 2
     bgrnd.kill()
     fade.spd = 200
     fade.image = white
-    fade.image.set_alpha(0)
-    scene_objects = []
+    fade.image.set_alpha(255)
+    scene_objects = [victory_screen]
+    fade.fade = 1
+    player.kill()
+    next_state = "game"
 
-    pygame.mixer.Sound(die_sound).play()
     while running and state == "win":
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -589,20 +598,18 @@ def game_won():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_z and fade.fade == 0:
                     fade.fade = -1
-                    pygame.mixer.music.stop()
-                    pygame.mixer.Sound.play(revive_sound)
-        screen.fill(pygame.Color("Purple"))
+        screen.fill(pygame.Color("Black"))
         time += 1000 / FPS
         sprite_group.update()
-        overlap_group.update(next_state)
+        overlap_group.update()
         sprite_group.draw(screen)
         overlap_group.draw(screen)
         clock.tick(FPS)
         pygame.display.flip()
     time = 0
     fade.fade = 1
-    broken_ship.kill()
-    player.kill()
+    for obj in scene_objects:
+        obj.kill()
     bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
     fade.spd = 256
 
