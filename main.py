@@ -195,6 +195,8 @@ class Player(AnimatedSprite):
         self.mask = mask
         self.x = x
         self.y = y
+        self.n_x = x
+        self.n_y = y
         self.rect.centerx = x
         self.rect.centery = y
         self.movex = 0
@@ -208,22 +210,24 @@ class Player(AnimatedSprite):
 
     def update(self):
         super().update()
-        self.x += self.vel * self.movex / FPS / (2 if self.slow else 1)
-        self.y += self.vel * self.movey / FPS / (2 if self.slow else 1)
+        self.n_x += self.vel * self.movex / FPS / (2 if self.slow else 1)
+        self.n_y += self.vel * self.movey / FPS / (2 if self.slow else 1)
+        self.x = self.n_x
+        self.y = self.n_y
         self.rect.centerx = self.x
         self.rect.centery = self.y
         if self.rect.colliderect(tborder.rect):
             self.rect.y = 0
-            self.y = self.rect.centery
+            self.n_y = self.y = self.rect.centery
         elif self.rect.colliderect(bborder.rect):
             self.rect.y = screen_size[1] - self.rect.size[1]
-            self.y = self.rect.centery
+            self.n_y = self.y = self.rect.centery
         if self.rect.colliderect(lborder.rect):
             self.rect.x = 0
-            self.x = self.rect.centerx
+            self.n_x = self.x = self.rect.centerx
         elif self.rect.colliderect(rborder.rect):
             self.rect.x = screen_size[0] - self.rect.size[0]
-            self.x = self.rect.centerx
+            self.n_x = self.x = self.rect.centerx
         if self.inv:
             self.image.set_alpha(255 - self.image.get_alpha())
             if time - self.hit_t > self.inv_t:
@@ -403,7 +407,6 @@ class BlackHole(Sprite):
             self.spd = -self.spd / 2
             self.alph = 255
         elif self.alph < 0:
-            scene_objects.remove(self)
             self.kill()
             return
         self.image.set_alpha(int(self.alph))
@@ -420,8 +423,7 @@ class BlackHole(Sprite):
         draw = ImageDraw.Draw(img)
         for i in range(49, -1, -1):
             draw.ellipse(((49 - i) * 3, (49 - i) * 3, i * 3 + 1, i * 3 + 1), fill=self.pix[0, i], width=1)
-        img.save("data/blackhole_image.png")
-        self.image = pygame.transform.scale(load_image("blackhole_image.png"),
+        self.image = pygame.transform.scale(pygame.image.fromstring(img.tobytes(), img.size, img.mode),
                                             (int((self.alph / 255 * 150 + 1) * (
                                                         math.sin(time / 50) + 10) / 10),
                                             int((self.alph / 255 * 150 + 1) * (
@@ -442,10 +444,11 @@ class BlackHole(Sprite):
                 vel = (self.alph / 17 * 3) ** 3 / d
                 vel_x = vel * d_x / d
                 vel_y = vel * d_y / d
-                player.x -= vel_x / FPS
-                player.y -= vel_y / FPS
+                player.n_x -= vel_x / FPS
+                player.n_y -= vel_y / FPS
 
     def kill(self):
+        scene_objects.remove(self)
         self.fx.kill()
         super().kill()
 
@@ -489,7 +492,6 @@ white = pygame.transform.scale(load_image('fade_transition2.png'), screen_size)
 bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
 fade = FadeTransition(black, 256)
 star_image = load_image("star_normal.png")
-star_anim = load_image("star_breaking_anim_sheet.png")
 star_piece_image = load_image("star_piece.png")
 instr_image = load_image("ttl_controls.png", -1)
 clock = pygame.time.Clock()
@@ -514,7 +516,7 @@ bborder = Border(-1, screen_size[1] + 1, screen_size[0] + 1, screen_size[1] + 1)
 lborder = Border(-1, -1, -1, screen_size[1] + 1)
 rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 # информация о прогрессе игры
-levels = 3
+levels = 4
 player_data_read = open("data/player_data.ini", mode="r")
 data = [list(i.split("=")) for i in player_data_read.read().split("\n")]
 data_dict = dict()
