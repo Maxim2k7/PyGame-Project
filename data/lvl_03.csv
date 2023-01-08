@@ -1,4 +1,4 @@
-time	type	x	y	vel	rot_spd
+time	type	x	y	speed	rot_spd
 2449	star	163	-100	540	382
 9078	star	274	-100	255	461
 5789	star	476	-100	628	712

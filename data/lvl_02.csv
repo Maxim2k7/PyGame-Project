@@ -1,4 +1,4 @@
-time	type	x	y	vel	rot_spd
+time	type	x	y	speed	rot_spd
 0	star	512	-100	350	1
 100	star	512	-100	350	2
 200	star	512	-100	350	3
@@ -150,3 +150,5 @@ time	type	x	y	vel	rot_spd
 14800	star	512	-100	350	325
 14900	star	512	-100	350	328
 20000	win
+3000	b_hole	512	384	40
+10000	b_hole	512	384	30

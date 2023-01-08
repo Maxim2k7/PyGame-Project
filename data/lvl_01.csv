@@ -1,4 +1,4 @@
-time	type	x	y	vel	rot_spd
+time	type	x	y	speed	rot_spd
 1000	star	100	-100	250	60
 1500	star	200	-100	250	70
 2000	star	300	-100	250	80

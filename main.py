@@ -3,6 +3,7 @@ import pygame
 import os
 import math
 import random
+from PIL import Image, ImageDraw
 
 # глобальные параметры, функции и объекты для игры
 pygame.init()
@@ -373,6 +374,105 @@ class StarPiece(Sprite):
         player.check_hit(self)
 
 
+class BlackHole(Sprite):
+    def __init__(self, x, y, spd):
+        super().__init__(enemies_group)
+        scene_objects.append(self)
+        ref = Image.open("data/blackhole_generator.png")
+        self.pix = ref.load()
+        self.x = x
+        self.y = y
+        self.spd = spd
+        self.alph = 0
+        self.image = load_image("blackhole_image.png")
+        self.image = pygame.transform.scale(self.image, (1, 1))
+        self.mask = pygame.mask.from_surface(self.image)
+        self.color_key = self.image.get_at((0, 0))
+        self.image.set_alpha(0)
+        self.rect = self.image.get_rect()
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
+        self.mask = pygame.mask.from_surface(self.image)
+        self.fx = BlackHoleFX(self)
+
+    def update(self):
+        self.offset()
+        self.make_blackhole()
+        self.alph += self.spd / FPS
+        if self.alph >= 255:
+            self.spd = -self.spd / 2
+            self.alph = 255
+        elif self.alph < 0:
+            scene_objects.remove(self)
+            self.kill()
+            return
+        self.image.set_alpha(int(self.alph))
+        self.pull()
+
+    def offset(self):
+        p_temp = self.pix[0, 0]
+        for j in range(50 - 1):
+            self.pix[0, j] = self.pix[0, j + 1]
+        self.pix[0, -1] = p_temp
+
+    def make_blackhole(self):
+        img = Image.new("RGB", (151, 151), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        for i in range(49, -1, -1):
+            draw.ellipse(((49 - i) * 3, (49 - i) * 3, i * 3 + 1, i * 3 + 1), fill=self.pix[0, i], width=1)
+        img.save("data/blackhole_image.png")
+        self.image = pygame.transform.scale(load_image("blackhole_image.png"),
+                                            (int((self.alph / 255 * 150 + 1) * (
+                                                        math.sin(time / 50) + 10) / 10),
+                                            int((self.alph / 255 * 150 + 1) * (
+                                                        math.sin(time / 50) + 10) / 10)))
+        self.rect = self.image.get_rect()
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
+        self.image.set_colorkey(self.color_key)
+
+    def pull(self):
+        if not player.inv:
+            d_x = player.x - self.x
+            d_y = player.y - self.y
+            d = math.sqrt(d_x ** 2 + d_y ** 2)
+            if d <= self.image.get_size()[0] / 2:
+                player.check_hit(self)
+            else:
+                vel = (self.alph / 17 * 3) ** 3 / d
+                vel_x = vel * d_x / d
+                vel_y = vel * d_y / d
+                player.x -= vel_x / FPS
+                player.y -= vel_y / FPS
+
+    def kill(self):
+        self.fx.kill()
+        super().kill()
+
+
+class BlackHoleFX(Sprite):
+    def __init__(self, blackhole):
+        super().__init__(enemies_group)
+        scene_objects.append(self)
+        self.b_hole = blackhole
+        self.orig_im = load_image("blackhole_clouds.png")
+        self.image = self.orig_im
+        self.color_key = self.image.get_at((0, 0))
+        self.rect = self.image.get_rect()
+        self.rect.centerx = self.b_hole.x
+        self.rect.centery = self.b_hole.y
+
+    def update(self):
+        self.image = pygame.transform.scale(self.orig_im, (int(self.b_hole.alph ** 2 / 255 + 1),
+                                                           int(self.b_hole.alph ** 2 / 255 + 1)))
+        self.image = pygame.transform.rotate(self.image, int(time / 2))
+        self.image.set_alpha(self.b_hole.alph // 2)
+        self.image.set_colorkey(self.color_key)
+        self.rect = self.image.get_rect()
+        self.rect.centerx = self.b_hole.x
+        self.rect.centery = self.b_hole.y
+
+
 # инициализация переменных в игре
 # визуальная часть
 all_sprites = SpriteGroup()
@@ -479,6 +579,7 @@ def game():
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
     health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
     scene_objects = [health_bar]
+
     import csv
     try:
         with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
@@ -487,7 +588,10 @@ def game():
     except pygame.error as message:
         print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
         raise SystemExit(message)
-    pygame.mixer.music.load('data/mus_acid_cool.wav')
+    if int(data_dict["lvl"]) % 2 == 0:
+        pygame.mixer.music.load('data/mus_meh_music.wav')
+    else:
+        pygame.mixer.music.load('data/mus_acid_cool.wav')
     pygame.mixer.music.play(-1)
 
     active = [False, False, False, False]
@@ -528,8 +632,10 @@ def game():
         for action in actions:
             if int(action["time"]) <= time:
                 if action["type"] == "star":
-                    Star(int(action["x"]), int(action["y"]), int(action["vel"]), int(action["rot_spd"]))
-                if action["type"] == "win":
+                    Star(int(action["x"]), int(action["y"]), int(action["speed"]), int(action["rot_spd"]))
+                elif action["type"] == "b_hole":
+                    BlackHole(int(action["x"]), int(action["y"]), int(action["speed"]))
+                elif action["type"] == "win":
                     next_state = "win"
                     fade.fade = -1
                     fade.image = white
