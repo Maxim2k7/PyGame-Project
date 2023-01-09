@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-import pygame
 import os
+import csv
 import math
 import random
+import pygame
 from PIL import Image, ImageDraw
 
 # глобальные параметры, функции и объекты для игры
@@ -46,7 +47,7 @@ class Sprite(pygame.sprite.Sprite):
 
 
 class AnimatedSprite(pygame.sprite.Sprite):
-    def __init__(self, sheet, columns, rows, x, y, group, speed):
+    def __init__(self, sheet, columns, rows, x, y, group, anim_speed):
         super().__init__(group)
         self.add(all_sprites)
         self.frames = []
@@ -54,7 +55,7 @@ class AnimatedSprite(pygame.sprite.Sprite):
         self.cur_frame = 0
         self.image = self.frames[self.cur_frame]
         self.rect = self.rect.move(x, y)
-        self.speed = speed
+        self.anim_speed = anim_speed
 
     def cut_sheet(self, sheet, columns, rows):
         self.rect = pygame.Rect(0, 0, sheet.get_width() // columns, sheet.get_height() // rows)
@@ -64,10 +65,11 @@ class AnimatedSprite(pygame.sprite.Sprite):
                 self.frames.append(sheet.subsurface(pygame.Rect(frame_location, self.rect.size)))
 
     def update(self):
-        self.cur_frame += self.speed / FPS
-        if self.cur_frame >= len(self.frames):
-            self.cur_frame -= (int(self.cur_frame) // len(self.frames)) * len(self.frames)
-        self.image = self.frames[int(self.cur_frame)]
+        if self.anim_speed != 0:
+            self.cur_frame += self.anim_speed / FPS
+            if self.cur_frame >= len(self.frames):
+                self.cur_frame -= (int(self.cur_frame) // len(self.frames)) * len(self.frames)
+            self.image = self.frames[int(self.cur_frame)]
 
 
 class Camera:
@@ -335,7 +337,6 @@ class Star(Sprite):
                 pygame.mixer.Sound.play(star_explode_sound)
                 for i in range(5):
                     StarPiece(self.x, self.y, 400, i * 72 + self.rot)
-                scene_objects.remove(self)
                 self.kill()
         # применение изменений
         self.image = pygame.transform.rotate(star_image, self.rot)
@@ -371,7 +372,6 @@ class StarPiece(Sprite):
         self.x -= math.sin(self.rot) * self.vel / FPS
         self.y -= math.cos(self.rot) * self.vel / FPS
         if not self.rect.colliderect(screen_rect):
-            scene_objects.remove(self)
             self.kill()
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
@@ -396,7 +396,6 @@ class BlackHole(Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
-        self.mask = pygame.mask.from_surface(self.image)
         self.fx = BlackHoleFX(self)
 
     def update(self):
@@ -448,7 +447,6 @@ class BlackHole(Sprite):
                 player.n_y -= vel_y / FPS
 
     def kill(self):
-        scene_objects.remove(self)
         self.fx.kill()
         super().kill()
 
@@ -456,7 +454,6 @@ class BlackHole(Sprite):
 class BlackHoleFX(Sprite):
     def __init__(self, blackhole):
         super().__init__(enemies_group)
-        scene_objects.append(self)
         self.b_hole = blackhole
         self.orig_im = load_image("blackhole_clouds.png")
         self.image = self.orig_im
@@ -474,6 +471,113 @@ class BlackHoleFX(Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx = self.b_hole.x
         self.rect.centery = self.b_hole.y
+
+
+class LaserBlaster(AnimatedSprite):
+    def __init__(self, x, y):
+        super().__init__(laser_blaster_anim_sheet, 3, 3, 0, y, enemies_group, 0)
+        scene_objects.append(self)
+        self.x = x
+        self.y = y
+        self.rot = 0
+        self.image = laser_blaster_image
+        self.orig_im = laser_blaster_image
+        self.mask = pygame.mask.from_surface(self.image)
+        self.rect = self.image.get_rect()
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
+        self.state = "appear"
+        self.handle = LaserBlasterHandle(self)
+
+    def update(self):
+        self.mask = pygame.mask.from_surface(self.image)
+        if self.state == "appear":
+            self.appear()
+            self.aim()
+            self.rect.centerx = int(self.x)
+            self.rect.centery = int(self.y)
+            player.check_hit(self)
+        elif self.state == "shoot":
+            self.shoot()
+            player.check_hit(self)
+        else:
+            super().update()
+            self.image = pygame.transform.rotate(self.frames[int(self.cur_frame)], int(self.rot))
+            self.mask = pygame.mask.from_surface(self.image)
+            self.rect = self.image.get_rect()
+            if int(self.cur_frame) == len(self.frames) - 1:
+                self.anim_speed = 0
+            self.disappear()
+
+    def appear(self):
+        if self.x > screen_size[0] // 2:
+            if self.x > screen_size[0] - 100:
+                self.x -= 100 / FPS
+            else:
+                self.x = screen_size[0] - 100
+                self.state = "shoot"
+        else:
+            if self.x < 100:
+                self.x += 100 / FPS
+            else:
+                self.x = 100
+                self.state = "shoot"
+
+    def aim(self):
+        a = (self.x - player.x)
+        b = (self.y - player.y)
+        c = math.sqrt(a ** 2 + b ** 2)
+        if c != 0:
+            ang_r = math.asin(b / c)
+            ang_d = ang_r / math.pi * 180
+            self.rot = ang_d if a <= 0 else 180 - ang_d
+            self.image = pygame.transform.rotate(self.orig_im, int(self.rot))
+            self.mask = pygame.mask.from_surface(self.image)
+            self.rect = self.image.get_rect()
+
+    def shoot(self):
+        StarPiece(self.x, self.y, 1000, self.rot - 90)
+        self.anim_speed = 15
+        self.state = "disappear"
+
+    def disappear(self):
+        if self.x > screen_size[0] // 2:
+            if self.x < 1174:
+                self.x += 450 / FPS
+            else:
+                self.kill()
+                return
+        else:
+            if self.x > -150:
+                self.x -= 450 / FPS
+            else:
+                self.kill()
+                return
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
+        player.check_hit(self)
+
+    def kill(self):
+        self.handle.kill()
+        super().kill()
+
+
+class LaserBlasterHandle(Sprite):
+    def __init__(self, laser_blaster):
+        super().__init__(enemies_group)
+        self.blstr = laser_blaster
+        if self.blstr.x > screen_size[0] - 100:
+            self.image = pygame.transform.flip(laser_blaster_handle_image, True, False)
+        else:
+            self.image = laser_blaster_handle_image
+        self.rect = self.image.get_rect()
+        self.rect.centerx = int(self.blstr.x)
+        self.rect.centery = int(self.blstr.y)
+        self.image.set_colorkey(self.image.get_at((0, 0)))
+
+    def update(self):
+        self.rect.centerx = int(self.blstr.x)
+        self.rect.centery = int(self.blstr.y)
 
 
 # инициализация переменных в игре
@@ -494,6 +598,9 @@ fade = FadeTransition(black, 256)
 star_image = load_image("star_normal.png")
 star_piece_image = load_image("star_piece.png")
 instr_image = load_image("ttl_controls.png", -1)
+laser_blaster_handle_image = load_image("laser_blaster_handle.png")
+laser_blaster_image = load_image("laser_blaster_idle.png")
+laser_blaster_anim_sheet = load_image("laser_blaster_anim_sheet.png")
 clock = pygame.time.Clock()
 logo = None
 start = None
@@ -571,6 +678,9 @@ def start_screen():
     bgrnd.vel = 50
     time = 0
     next_state = "game_over"
+    for obj in scene_objects:
+        obj.kill()
+    scene_objects.clear()
 
 
 # инициализация и воспроизведение работы игры
@@ -581,8 +691,6 @@ def game():
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
     health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
     scene_objects = [health_bar]
-
-    import csv
     try:
         with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
             reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
@@ -637,6 +745,8 @@ def game():
                     Star(int(action["x"]), int(action["y"]), int(action["speed"]), int(action["rot_spd"]))
                 elif action["type"] == "b_hole":
                     BlackHole(int(action["x"]), int(action["y"]), int(action["speed"]))
+                elif action["type"] == "l_blast":
+                    LaserBlaster(int(action["x"]), int(action["y"]))
                 elif action["type"] == "win":
                     next_state = "win"
                     fade.fade = -1
@@ -673,6 +783,7 @@ def game():
         data_dict["lvl"] = str(int(data_dict["lvl"]) + 1)
     for obj in scene_objects:
         obj.kill()
+    scene_objects.clear()
 
 
 def game_over():
@@ -712,6 +823,9 @@ def game_over():
     player.kill()
     bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
     fade.spd = 256
+    for obj in scene_objects:
+        obj.kill()
+    scene_objects.clear()
 
 
 def game_won():
@@ -762,6 +876,9 @@ def game_won():
         obj.kill()
     bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
     fade.spd = 256
+    for obj in scene_objects:
+        obj.kill()
+    scene_objects.clear()
 
 
 # запуск действий
