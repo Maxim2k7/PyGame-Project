@@ -535,6 +535,7 @@ class LaserBlaster(AnimatedSprite):
             self.rect = self.image.get_rect()
 
     def shoot(self):
+        pygame.mixer.Sound.stop(laser_sound)
         pygame.mixer.Sound.play(laser_sound)
         ShotPiece(self.x, self.y, 1000, self.rot - 90, pygame.transform.scale(load_image("laser_shot.png"), (46, 46)))
         self.anim_speed = 24
@@ -691,6 +692,22 @@ def game():
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
     health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
     scene_objects = [health_bar]
+    if data_dict["lvl"] == "4":
+        generate_level = open(f'data/lvl_0{data_dict["lvl"]}.csv', mode="w")
+        res_str = ["time\ttype\tx\ty\tspeed\trot_spd"]
+        for i in range(50):
+            v = random.randint(0, 7)
+            if v == 0:
+                res_str.append(
+                    f"{i * 1000}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}\t{random.randint(30, 120)}")
+            elif v in range(1, 3):
+                res_str.append(f"{i * 1000}\tl_blast\t{random.choice((1174, -150))}\t{random.randint(200, 568)}")
+            else:
+                res_str.append(
+                    f"{i * 750}\tstar\t{random.randint(100, 924)}\t-100\t{random.randint(125, 625)}\t{random.randint(1, 360)}")
+        res_str.append(f"{57 * 1000}\twin")
+        generate_level.write("\n".join(res_str))
+        generate_level.close()
     try:
         with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
             reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
