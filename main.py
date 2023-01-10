@@ -336,7 +336,7 @@ class Star(Sprite):
                 pygame.mixer.Sound.stop(star_explode_sound)
                 pygame.mixer.Sound.play(star_explode_sound)
                 for i in range(5):
-                    StarPiece(self.x, self.y, 400, i * 72 + self.rot)
+                    ShotPiece(self.x, self.y, 400, i * 72 + self.rot, star_piece_image)
                 self.kill()
         # применение изменений
         self.image = pygame.transform.rotate(star_image, self.rot)
@@ -348,14 +348,13 @@ class Star(Sprite):
         player.check_hit(self)
 
 
-# части звезды, на которые она разрывается
-class StarPiece(Sprite):
-    # создание части звезды на месте изначальной звезды
-    def __init__(self, x, y, vel, rot):
+# вражеские пули, которые выпускают другие объекты
+class ShotPiece(Sprite):
+    def __init__(self, x, y, vel, rot, image):
         super().__init__(enemies_group)
         scene_objects.append(self)
-        self.image = pygame.transform.rotate(star_piece_image, rot)
-        self.color_key = star_piece_image.get_at((0, 0))
+        self.image = pygame.transform.rotate(image, rot)
+        self.color_key = image.get_at((0, 0))
         self.image.set_colorkey(self.color_key)
         self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
@@ -366,7 +365,6 @@ class StarPiece(Sprite):
         self.vel = vel
         self.rot = rot / 360 * 2 * math.pi
 
-    # перемещение с ускорением
     def update(self):
         self.vel += 800 / FPS
         self.x -= math.sin(self.rot) * self.vel / FPS
@@ -503,6 +501,7 @@ class LaserBlaster(AnimatedSprite):
         else:
             super().update()
             self.image = pygame.transform.rotate(self.frames[int(self.cur_frame)], int(self.rot))
+            self.image.set_colorkey(self.image.get_at((0, 0)))
             self.mask = pygame.mask.from_surface(self.image)
             self.rect = self.image.get_rect()
             if int(self.cur_frame) == len(self.frames) - 1:
@@ -536,8 +535,9 @@ class LaserBlaster(AnimatedSprite):
             self.rect = self.image.get_rect()
 
     def shoot(self):
-        StarPiece(self.x, self.y, 1000, self.rot - 90)
-        self.anim_speed = 15
+        pygame.mixer.Sound.play(laser_sound)
+        ShotPiece(self.x, self.y, 1000, self.rot - 90, pygame.transform.scale(load_image("laser_shot.png"), (46, 46)))
+        self.anim_speed = 24
         self.state = "disappear"
 
     def disappear(self):
@@ -573,7 +573,6 @@ class LaserBlasterHandle(Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx = int(self.blstr.x)
         self.rect.centery = int(self.blstr.y)
-        self.image.set_colorkey(self.image.get_at((0, 0)))
 
     def update(self):
         self.rect.centerx = int(self.blstr.x)
@@ -615,6 +614,7 @@ revive_sound = pygame.mixer.Sound("data/snd_revive.ogg")
 you_won_sound = pygame.mixer.Sound("data/snd_youwon.ogg")
 win_sound = pygame.mixer.Sound("data/snd_win.ogg")
 del_sound = pygame.mixer.Sound("data/snd_deletedata.ogg")
+laser_sound = pygame.mixer.Sound("data/snd_laser.ogg")
 # контроль объектов в сцене
 scene_objects = []
 camera = Camera()
