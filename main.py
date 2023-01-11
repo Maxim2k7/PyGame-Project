@@ -189,6 +189,34 @@ class Instructions(Sprite):
         self.rect.y = 10
 
 
+class CurLevelText(Sprite):
+    def __init__(self):
+        super().__init__(sprite_group)
+        self.image = load_image("ttl_current_level.png", -1)
+        self.rect = self.image.get_rect()
+        self.image.set_alpha(0)
+        self.rect.centerx = screen_size[0] // 4 * 3 - 100
+        self.rect.centery = screen_size[1] // 3
+
+
+class CurLevel(AnimatedSprite):
+    def __init__(self):
+        super().__init__(load_image("ttl_numbers.png", -1), 5, 2, 0, 0, sprite_group, 0)
+        self.image = self.frames[int(data_dict["lvl"]) - 1]
+        self.color_key = self.image.get_at((0, 0))
+        self.image = pygame.transform.scale(self.image, (25, 25))
+        self.rect = self.image.get_rect()
+        self.rect.centerx = screen_size[0] // 4 * 3
+        self.rect.centery = screen_size[1] // 3 - 5
+        self.image.set_colorkey(self.color_key)
+        self.image.set_alpha(0)
+
+    def reset(self):
+        self.image = self.frames[int(data_dict["lvl"]) - 1]
+        self.image = pygame.transform.scale(self.image, (25, 25))
+        self.image.set_colorkey(self.color_key)
+
+
 # классы для основной игры
 class Player(AnimatedSprite):
     def __init__(self, sheet, columns, rows, x, y, group, speed, vel, inv_t, mask):
@@ -473,7 +501,7 @@ class BlackHoleFX(Sprite):
 
 class LaserBlaster(AnimatedSprite):
     def __init__(self, x, y):
-        super().__init__(laser_blaster_anim_sheet, 3, 3, 0, y, enemies_group, 0)
+        super().__init__(laser_blaster_anim_sheet, 3, 3, x, y, enemies_group, 0)
         scene_objects.append(self)
         self.x = x
         self.y = y
@@ -639,7 +667,9 @@ def start_screen():
     logo = Logo(load_image('ttl_logo.png'))
     start = PressZToStartText(load_image('ttl_start.png', 0))
     instr = Instructions()
-    scene_objects = [logo, start, instr]
+    lvl = CurLevel()
+    lvl_txt = CurLevelText()
+    scene_objects = [logo, start, instr, lvl, lvl_txt]
 
     pygame.mixer.music.load('data/mus_start_screen.wav')
     pygame.mixer.music.play(-1)
@@ -652,6 +682,8 @@ def start_screen():
                 if event.key == pygame.K_z and fade.fade == 0:
                     start.image.set_alpha(0)
                     instr.image.set_alpha(0)
+                    lvl.image.set_alpha(0)
+                    lvl_txt.image.set_alpha(0)
                     bgrnd.vel = 0
                     logo.stop = True
                     fade.fade = -1
@@ -659,10 +691,11 @@ def start_screen():
                     pygame.mixer.Sound.play(start_sound)
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                if event.key == pygame.K_DELETE:
+                if event.key == pygame.K_DELETE and fade.fade == 0:
                     pygame.mixer.Sound.stop(del_sound)
                     pygame.mixer.Sound.play(del_sound)
                     data_dict["lvl"] = "1"
+                    lvl.reset()
         time += 1000 / FPS
         bgrnd.update()
         sprite_group.update()
@@ -670,6 +703,8 @@ def start_screen():
         if fade.loaded:
             start.image.set_alpha(255)
             instr.image.set_alpha(255)
+            lvl.image.set_alpha(255)
+            lvl_txt.image.set_alpha(255)
             fade.loaded = False
         sprite_group.draw(screen)
         overlap_group.draw(screen)
@@ -699,12 +734,14 @@ def game():
             v = random.randint(0, 7)
             if v == 0:
                 res_str.append(
-                    f"{i * 1000}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}\t{random.randint(30, 120)}")
+                    f"{i * 1000}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}"
+                    f"\t{random.randint(30, 120)}")
             elif v in range(1, 3):
                 res_str.append(f"{i * 1000}\tl_blast\t{random.choice((1174, -150))}\t{random.randint(200, 568)}")
             else:
                 res_str.append(
-                    f"{i * 750}\tstar\t{random.randint(100, 924)}\t-100\t{random.randint(125, 625)}\t{random.randint(1, 360)}")
+                    f"{i * 1000}\tstar\t{random.randint(100, 924)}\t-100\t{random.randint(125, 625)}"
+                    f"\t{random.randint(1, 360)}")
         res_str.append(f"{57 * 1000}\twin")
         generate_level.write("\n".join(res_str))
         generate_level.close()
