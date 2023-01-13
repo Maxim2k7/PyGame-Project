@@ -135,18 +135,34 @@ class BackGround:
         self.pic1 = BackGroundPart(image)
         self.pic2 = BackGroundPart(image)
         self.y = 0
-        self.lim = screen_size[1]
+        self.lim = screen_size[0]
         self.vel = vel
 
     def update(self):
         self.y += self.vel / FPS
         self.y %= self.lim
         self.pic1.rect.y = int(self.y)
-        self.pic2.rect.y = int(self.y) - screen_size[1]
+        self.pic2.rect.y = int(self.y) - self.lim
 
     def kill(self):
         self.pic1.kill()
         self.pic2.kill()
+
+
+class BossBackGround(BackGround):
+    def __init__(self, vel, anim_speed):
+        super().__init__(bgrnd_boss_frames[0], vel)
+        self.frames = bgrnd_boss_frames
+        self.anim_speed = anim_speed
+        self.cur_frame = 0
+
+    def update(self):
+        super().update()
+        self.cur_frame += self.anim_speed / FPS
+        if self.cur_frame >= len(self.frames):
+            self.cur_frame -= (int(self.cur_frame) // len(self.frames)) * len(self.frames)
+        self.pic1.image = self.frames[int(self.cur_frame)]
+        self.pic2.image = self.frames[int(self.cur_frame)]
 
 
 # классы для начального экрана игры
@@ -335,10 +351,11 @@ class Star(Sprite):
         self.color_key = star_image.get_at((0, 0))
         self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.centery = y
+        self.boss_fight = data_dict["lvl"] != str(levels)
         self.x = x
-        self.y = y
+        self.y = y if self.boss_fight else screen_size[1] - y
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
         self.vel = vel
         self.rot_spd = rot_spd
         self.rot = 0
@@ -348,7 +365,7 @@ class Star(Sprite):
     # кружение и движение вниз
     def update(self):
         # кружение и движение вниз
-        self.y += self.vel / FPS
+        self.y += self.vel / FPS if self.boss_fight else -self.vel / FPS
         self.rot += self.rot_spd / FPS
         if self.rot >= 360:
             self.rot -= (int(self.rot) // 360) * 360
@@ -414,10 +431,10 @@ class BlackHole(Sprite):
         self.y = y
         self.spd = spd
         self.alph = 0
-        self.image = load_image("blackhole_image.png")
+        self.color_key = (0, 0, 0, 255)
+        self.make_blackhole()
         self.image = pygame.transform.scale(self.image, (1, 1))
         self.mask = pygame.mask.from_surface(self.image)
-        self.color_key = self.image.get_at((0, 0))
         self.image.set_alpha(0)
         self.rect = self.image.get_rect()
         self.rect.centerx = int(self.x)
@@ -608,12 +625,87 @@ class LaserBlasterHandle(Sprite):
         self.rect.centery = int(self.blstr.y)
 
 
+class Boss(AnimatedSprite):
+    def __init__(self):
+        super().__init__(boss_body, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        scene_objects.append(self)
+        self.x = screen_size[0] // 2
+        self.y = screen_size[1] // 2
+        self.rot = 0
+        self.orig_im = boss_body
+        self.image = boss_body
+        self.rect = self.image.get_rect()
+        self.color_key = self.image.get_at((screen_size[0] // 2, screen_size[0] // 2))
+        self.image.set_colorkey(self.color_key)
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.xsize = self.rect.w
+        self.ysize = self.rect.h
+        self.stage = 0
+        self.children = [BadGuy()]
+
+    def update(self):
+        if self.stage == 0:
+            self.image = pygame.transform.scale(self.orig_im,
+                                                (int(self.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
+                                                 int(self.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
+            self.rect = self.image.get_rect()
+            self.image.set_colorkey(self.color_key)
+            self.rect.centerx = self.x
+            self.rect.centery = self.y
+            for i in range(len(self.children)):
+                child = self.children[i]
+                child.image = pygame.transform.scale(child.orig_im,
+                                                (int(child.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
+                                                 int(child.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
+                child.rect = child.image.get_rect()
+                child.image.set_colorkey(child.color_key)
+                child.rect.centerx = child.x
+                child.rect.centery = child.y
+
+    def kill(self):
+        for child in self.children:
+            child.kill()
+        super().kill()
+
+
+class BadGuy(AnimatedSprite):
+    def __init__(self):
+        super().__init__(boss_enemie, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        self.x = screen_size[0] // 2
+        self.y = screen_size[1] // 2
+        self.rot = 0
+        self.orig_im = boss_enemie
+        self.image = boss_enemie
+        self.color_key = self.image.get_at((0, 0))
+        self.image.set_colorkey(self.color_key)
+        self.rect = self.image.get_rect()
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.xsize = self.rect.w
+        self.ysize = self.rect.h
+
+
+class Engine(AnimatedSprite):
+    def __init__(self):
+        super().__init__(boss_enemie, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        self.x = 0
+        self.y = 0
+        self.rot = 0
+        self.image = boss_enemie
+        self.rect = self.image.get_rect()
+        self.image.set_colorkey(self.image.get_at((0, 0)))
+        self.rect.x = 0
+        self.rect.y = 0
+
+
 # инициализация переменных в игре
 # визуальная часть
 all_sprites = SpriteGroup()
 sprite_group = SpriteGroup()
 player_group = SpriteGroup()
 enemies_group = SpriteGroup()
+boss_group = SpriteGroup()
 overlap_group = SpriteGroup()
 running = True
 state = "start_screen"
@@ -621,7 +713,7 @@ next_state = "game"
 time = 0
 black = pygame.transform.scale(load_image('fade_transition.png'), screen_size)
 white = pygame.transform.scale(load_image('fade_transition2.png'), screen_size)
-bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+bgrnd = BackGround(load_image('bgrnd_space.png'), 50)
 fade = FadeTransition(black, 256)
 star_image = load_image("star_normal.png")
 star_piece_image = load_image("star_piece.png")
@@ -629,6 +721,10 @@ instr_image = load_image("ttl_controls.png", -1)
 laser_blaster_handle_image = load_image("laser_blaster_handle.png")
 laser_blaster_image = load_image("laser_blaster_idle.png")
 laser_blaster_anim_sheet = load_image("laser_blaster_anim_sheet.png")
+boss_body = load_image("boss_back_part.png")
+boss_enemie = load_image("boss_cockpit.png")
+boss_engine1 = load_image("boss_engine1.png")
+bgrnd_boss_frames = [load_image(f"boss_background_anim/bgrnd_space_boss{i}.png") for i in range(60)]
 clock = pygame.time.Clock()
 logo = None
 start = None
@@ -721,11 +817,11 @@ def start_screen():
 
 # инициализация и воспроизведение работы игры
 def game():
-    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels, fade
+    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels, fade, bgrnd
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
-    health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
+    health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, player_group)
     scene_objects = [health_bar]
     if data_dict["lvl"] == "4":
         generate_level = open(f'data/lvl_0{data_dict["lvl"]}.csv', mode="w")
@@ -752,7 +848,12 @@ def game():
     except pygame.error as message:
         print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
         raise SystemExit(message)
-    if int(data_dict["lvl"]) % 2 == 0:
+    if int(data_dict["lvl"]) == levels:
+        bgrnd.kill()
+        bgrnd = BossBackGround(50, 30)
+        Boss()
+        pygame.mixer.music.load('data/mus_boss_fight.wav')
+    elif int(data_dict["lvl"]) % 2 == 0:
         pygame.mixer.music.load('data/mus_meh_music.wav')
     else:
         pygame.mixer.music.load('data/mus_acid_cool.wav')
@@ -811,6 +912,7 @@ def game():
             actions.remove(action)
         bgrnd.update()
         sprite_group.update()
+        boss_group.update()
         player_group.update()
         enemies_group.update()
         overlap_group.update()
@@ -819,6 +921,7 @@ def game():
                 camera.apply(obj)
         screen.fill(pygame.Color("black"))
         sprite_group.draw(screen)
+        boss_group.draw(screen)
         player_group.draw(screen)
         enemies_group.draw(screen)
         overlap_group.draw(screen)
@@ -875,7 +978,7 @@ def game_over():
     fade.fade = 1
     broken_ship.kill()
     player.kill()
-    bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+    bgrnd = BackGround(load_image('bgrnd_space.png'), 50)
     fade.spd = 256
     for obj in scene_objects:
         obj.kill()
@@ -928,7 +1031,7 @@ def game_won():
     fade.fade = 1
     for obj in scene_objects:
         obj.kill()
-    bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+    bgrnd = BackGround(load_image('bgrnd_space.png'), 50)
     fade.spd = 256
     for obj in scene_objects:
         obj.kill()
