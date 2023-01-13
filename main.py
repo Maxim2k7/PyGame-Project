@@ -340,6 +340,7 @@ class Border(Sprite):
         else:
             self.image = pygame.Surface([x2 - x1, 1])
             self.rect = pygame.Rect(x1, y1, x2 - x1, 1)
+        self.image.set_alpha(0)
 
 
 # атакующая звезда, спукающаяся вниз и затем разрывающаяся
@@ -351,9 +352,9 @@ class Star(Sprite):
         self.color_key = star_image.get_at((0, 0))
         self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
-        self.boss_fight = data_dict["lvl"] != str(levels)
+        self.boss_fight = data_dict["lvl"] == str(levels)
         self.x = x
-        self.y = y if self.boss_fight else screen_size[1] - y
+        self.y = y if not self.boss_fight else screen_size[1] - y
         self.rect.centerx = self.x
         self.rect.centery = self.y
         self.vel = vel
@@ -365,7 +366,7 @@ class Star(Sprite):
     # кружение и движение вниз
     def update(self):
         # кружение и движение вниз
-        self.y += self.vel / FPS if self.boss_fight else -self.vel / FPS
+        self.y += self.vel / FPS if not self.boss_fight else -self.vel / FPS
         self.rot += self.rot_spd / FPS
         if self.rot >= 360:
             self.rot -= (int(self.rot) // 360) * 360
@@ -391,6 +392,8 @@ class Star(Sprite):
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
         player.check_hit(self)
+        if self.boss_fight:
+            boss.check_hit(self)
 
 
 # вражеские пули, которые выпускают другие объекты
@@ -409,6 +412,7 @@ class ShotPiece(Sprite):
         self.y = y
         self.vel = vel
         self.rot = rot / 360 * 2 * math.pi
+        self.boss_fight = data_dict["lvl"] == str(levels)
 
     def update(self):
         self.vel += 800 / FPS
@@ -419,6 +423,8 @@ class ShotPiece(Sprite):
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
         player.check_hit(self)
+        if self.boss_fight:
+            boss.check_hit(self)
 
 
 class BlackHole(Sprite):
@@ -642,31 +648,41 @@ class Boss(AnimatedSprite):
         self.xsize = self.rect.w
         self.ysize = self.rect.h
         self.stage = 0
-        self.children = [BadGuy()]
+        self.children = [BadGuy(), Engine(boss_engine1, boss_engine1_inv), Engine(boss_engine2, boss_engine2_inv)]
 
     def update(self):
         if self.stage == 0:
-            self.image = pygame.transform.scale(self.orig_im,
-                                                (int(self.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
-                                                 int(self.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
-            self.rect = self.image.get_rect()
-            self.image.set_colorkey(self.color_key)
-            self.rect.centerx = self.x
-            self.rect.centery = self.y
-            for i in range(len(self.children)):
-                child = self.children[i]
-                child.image = pygame.transform.scale(child.orig_im,
-                                                (int(child.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
-                                                 int(child.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
-                child.rect = child.image.get_rect()
-                child.image.set_colorkey(child.color_key)
-                child.rect.centerx = child.x
-                child.rect.centery = child.y
+            self.sin_pulse(self, self.orig_im)
+            for child in self.children:
+                self.sin_pulse(child, child.orig_im)
+
+    def sin_pulse(self, part, orig_im):
+        part.image = pygame.transform.scale(orig_im,
+                                            (int(part.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
+                                             int(part.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
+        part.rect = part.image.get_rect()
+        part.image.set_colorkey(part.color_key)
+        part.rect.centerx = part.x
+        part.rect.centery = part.y
 
     def kill(self):
         for child in self.children:
             child.kill()
         super().kill()
+
+    def check_hit(self, projectile):
+        for child in self.children:
+            if child != self.children[0]:
+                if pygame.sprite.collide_mask(child, projectile):
+                    if child.health > 1:
+                        # уменьшить кол-во жизни части босса
+                        self.sin_pulse(child, child.inv_im)
+                        pygame.mixer.Sound.play(boss_hit_sound)
+                        child.health -= 1
+                    else:
+                        # в случае уничтожения
+                        pass
+                    projectile.kill()
 
 
 class BadGuy(AnimatedSprite):
@@ -676,27 +692,37 @@ class BadGuy(AnimatedSprite):
         self.y = screen_size[1] // 2
         self.rot = 0
         self.orig_im = boss_enemie
+        self.inv_im = boss_enemie_inv
         self.image = boss_enemie
         self.color_key = self.image.get_at((0, 0))
         self.image.set_colorkey(self.color_key)
+        self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
         self.rect.centerx = self.x
         self.rect.centery = self.y
         self.xsize = self.rect.w
         self.ysize = self.rect.h
+        self.health = 10
 
 
 class Engine(AnimatedSprite):
-    def __init__(self):
-        super().__init__(boss_enemie, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
-        self.x = 0
-        self.y = 0
+    def __init__(self, image, inv_im):
+        super().__init__(image, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        self.x = screen_size[0] // 2
+        self.y = screen_size[1] // 2
         self.rot = 0
-        self.image = boss_enemie
+        self.orig_im = image
+        self.inv_im = inv_im
+        self.image = image
+        self.color_key = self.image.get_at((0, 0))
+        self.image.set_colorkey(self.color_key)
+        self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
-        self.image.set_colorkey(self.image.get_at((0, 0)))
-        self.rect.x = 0
-        self.rect.y = 0
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.xsize = self.rect.w
+        self.ysize = self.rect.h
+        self.health = 10
 
 
 # инициализация переменных в игре
@@ -723,23 +749,29 @@ laser_blaster_image = load_image("laser_blaster_idle.png")
 laser_blaster_anim_sheet = load_image("laser_blaster_anim_sheet.png")
 boss_body = load_image("boss_back_part.png")
 boss_enemie = load_image("boss_cockpit.png")
+boss_enemie_inv = load_image("boss_cockpit_inv.png")
 boss_engine1 = load_image("boss_engine1.png")
+boss_engine1_inv = load_image("boss_engine1_inv.png")
+boss_engine2 = load_image("boss_engine2.png")
+boss_engine2_inv = load_image("boss_engine2_inv.png")
 bgrnd_boss_frames = [load_image(f"boss_background_anim/bgrnd_space_boss{i}.png") for i in range(60)]
 clock = pygame.time.Clock()
 logo = None
 start = None
 player = None
 health_bar = None
+boss = None
 # звуки
 start_sound = pygame.mixer.Sound("data/snd_start.ogg")
 hit_sound = pygame.mixer.Sound("data/snd_hit.ogg")
-star_explode_sound = pygame.mixer.Sound("data/snd_starexplode.ogg")
+star_explode_sound = pygame.mixer.Sound("data/snd_star_explode.ogg")
 die_sound = pygame.mixer.Sound("data/snd_die.ogg")
 revive_sound = pygame.mixer.Sound("data/snd_revive.ogg")
-you_won_sound = pygame.mixer.Sound("data/snd_youwon.ogg")
+you_won_sound = pygame.mixer.Sound("data/snd_you_won.ogg")
 win_sound = pygame.mixer.Sound("data/snd_win.ogg")
-del_sound = pygame.mixer.Sound("data/snd_deletedata.ogg")
+del_sound = pygame.mixer.Sound("data/snd_delete_data.ogg")
 laser_sound = pygame.mixer.Sound("data/snd_laser.ogg")
+boss_hit_sound = pygame.mixer.Sound("data/snd_boss_hit.ogg")
 # контроль объектов в сцене
 scene_objects = []
 camera = Camera()
@@ -817,7 +849,7 @@ def start_screen():
 
 # инициализация и воспроизведение работы игры
 def game():
-    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels, fade, bgrnd
+    global player, health_bar, scene_objects, boss, running, state, next_state, time, data_dict, levels, fade, bgrnd
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
@@ -851,7 +883,7 @@ def game():
     if int(data_dict["lvl"]) == levels:
         bgrnd.kill()
         bgrnd = BossBackGround(50, 30)
-        Boss()
+        boss = Boss()
         pygame.mixer.music.load('data/mus_boss_fight.wav')
     elif int(data_dict["lvl"]) % 2 == 0:
         pygame.mixer.music.load('data/mus_meh_music.wav')
