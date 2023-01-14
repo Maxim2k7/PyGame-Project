@@ -263,16 +263,16 @@ class Player(AnimatedSprite):
         self.rect.centerx = self.x
         self.rect.centery = self.y
         if self.rect.colliderect(tborder.rect):
-            self.rect.y = 0
+            self.rect.y = tborder.rect.y + 1
             self.n_y = self.y = self.rect.centery
         elif self.rect.colliderect(bborder.rect):
-            self.rect.y = screen_size[1] - self.rect.size[1]
+            self.rect.y = bborder.rect.y - self.rect.size[1]
             self.n_y = self.y = self.rect.centery
         if self.rect.colliderect(lborder.rect):
-            self.rect.x = 0
+            self.rect.x = lborder.rect.x + 1
             self.n_x = self.x = self.rect.centerx
         elif self.rect.colliderect(rborder.rect):
-            self.rect.x = screen_size[0] - self.rect.size[0]
+            self.rect.x = rborder.rect.x - self.rect.size[0]
             self.n_x = self.x = self.rect.centerx
         if self.inv:
             self.image.set_alpha(255 - self.image.get_alpha())
@@ -291,22 +291,23 @@ class Player(AnimatedSprite):
         offset_x = int(projectile.rect.centerx - self.rect.centerx)
         offset_y = int(projectile.rect.centery - self.rect.centery)
         if self.mask.overlap(self.mask, (offset_x, offset_y)):
-            if not self.inv:
+            if not self.inv and self.alive():
+                global state, next_state, fade
                 if health_bar.health > 1:
                     # уменьшить кол-во оставшихся жизней
-                    health_bar.health -= 1
-                    pygame.mixer.Sound.play(hit_sound)
-                    self.inv = True
-                    self.hit_t = time
-                    self.shake_dist = 20
-                else:
-                    # в случае поражения
-                    health_bar.health = 0
-                    global state, next_state, fade
-                    state = "game_over"
-                    next_state = "game"
-                    fade.fade = 0
-                    fade.image.set_alpha(0)
+                    if fade.fade == 0:
+                        health_bar.health -= 1
+                        pygame.mixer.Sound.play(hit_sound)
+                        self.inv = True
+                        self.hit_t = time
+                        self.shake_dist = 20
+                    else:
+                        # в случае поражения
+                        health_bar.health = 0
+                        state = "game_over"
+                        next_state = "game"
+                        fade.fade = 0
+                        fade.image.set_alpha(0)
                 projectile.kill()
 
 
@@ -647,14 +648,18 @@ class Boss(AnimatedSprite):
         self.rect.centery = self.y
         self.xsize = self.rect.w
         self.ysize = self.rect.h
-        self.stage = 0
         self.children = [BadGuy(), Engine(boss_engine1, boss_engine1_inv), Engine(boss_engine2, boss_engine2_inv)]
 
     def update(self):
-        if self.stage == 0:
-            self.sin_pulse(self, self.orig_im)
-            for child in self.children:
-                self.sin_pulse(child, child.orig_im)
+        self.sin_pulse(self, self.orig_im)
+        for child in self.children:
+            self.sin_pulse(child, child.orig_im)
+        if fade.fade == 0 and self.children[0].health == 0:
+            global next_state
+            next_state = "win"
+            fade.fade = -1
+            fade.image = white
+            fade.image.set_alpha(0)
 
     def sin_pulse(self, part, orig_im):
         part.image = pygame.transform.scale(orig_im,
@@ -672,17 +677,22 @@ class Boss(AnimatedSprite):
 
     def check_hit(self, projectile):
         for child in self.children:
-            if child != self.children[0]:
-                if pygame.sprite.collide_mask(child, projectile):
-                    if child.health > 1:
-                        # уменьшить кол-во жизни части босса
-                        self.sin_pulse(child, child.inv_im)
-                        pygame.mixer.Sound.play(boss_hit_sound)
-                        child.health -= 1
-                    else:
+            if pygame.sprite.collide_mask(child, projectile) and child.health > 0 and projectile.alive():
+                if child != self.children[0] or (child == self.children[0] and
+                                                 all([i.health <= 0 for i in self.children if i != self.children[0]])):
+                    # уменьшить кол-во жизни части босса
+                    self.sin_pulse(child, child.inv_im)
+                    pygame.mixer.Sound.stop(boss_hit_sound)
+                    pygame.mixer.Sound.play(boss_hit_sound)
+                    child.health -= 1
+                    if child.health <= 0:
                         # в случае уничтожения
-                        pass
-                    projectile.kill()
+                        child.health = 0
+                        pygame.mixer.Sound.stop(boss_explode_sound)
+                        pygame.mixer.Sound.play(boss_explode_sound)
+                        player.hit_t = time
+                        player.shake_dist = 20
+                projectile.kill()
 
 
 class BadGuy(AnimatedSprite):
@@ -772,6 +782,7 @@ win_sound = pygame.mixer.Sound("data/snd_win.ogg")
 del_sound = pygame.mixer.Sound("data/snd_delete_data.ogg")
 laser_sound = pygame.mixer.Sound("data/snd_laser.ogg")
 boss_hit_sound = pygame.mixer.Sound("data/snd_boss_hit.ogg")
+boss_explode_sound = pygame.mixer.Sound("data/snd_boss_explode.ogg")
 # контроль объектов в сцене
 scene_objects = []
 camera = Camera()
@@ -780,13 +791,33 @@ bborder = Border(-1, screen_size[1] + 1, screen_size[0] + 1, screen_size[1] + 1)
 lborder = Border(-1, -1, -1, screen_size[1] + 1)
 rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 # информация о прогрессе игры
-levels = 4
+levels = 5
 player_data_read = open("data/player_data.ini", mode="r")
 data = [list(i.split("=")) for i in player_data_read.read().split("\n")]
 data_dict = dict()
 for i in data:
     data_dict[i[0]] = i[1]
 player_data_read.close()
+
+
+def make_level():
+    generate_level = open(f'data/lvl_0{data_dict["lvl"]}.csv', mode="w")
+    res_str = ["time\ttype\tx\ty\tspeed\trot_spd"]
+    for i in range(35):
+        v = random.randint(0, 7)
+        if v == 0:
+            res_str.append(
+                f"{i * 1500}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}"
+                f"\t{random.randint(30, 120)}")
+        elif v in range(1, 3):
+            res_str.append(f"{i * 1500}\tl_blast\t{random.choice((1174, -150))}\t{random.randint(100, 668)}")
+        else:
+            res_str.append(
+                f"{i * 1500}\tstar\t{random.randint(100, 924)}\t-100\t{int((random.randint(115, 220) / 10) ** 2)}"
+                f"\t{random.randint(1, 360)}")
+    res_str.append(f"{38 * 1500}\twin")
+    generate_level.write("\n".join(res_str))
+    generate_level.close()
 
 
 # инициализация и воспроизведение работы экрана запуска игры
@@ -855,42 +886,36 @@ def game():
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
     health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, player_group)
     scene_objects = [health_bar]
-    if data_dict["lvl"] == "4":
-        generate_level = open(f'data/lvl_0{data_dict["lvl"]}.csv', mode="w")
-        res_str = ["time\ttype\tx\ty\tspeed\trot_spd"]
-        for i in range(50):
-            v = random.randint(0, 7)
-            if v == 0:
-                res_str.append(
-                    f"{i * 1000}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}"
-                    f"\t{random.randint(30, 120)}")
-            elif v in range(1, 3):
-                res_str.append(f"{i * 1000}\tl_blast\t{random.choice((1174, -150))}\t{random.randint(200, 568)}")
-            else:
-                res_str.append(
-                    f"{i * 1000}\tstar\t{random.randint(100, 924)}\t-100\t{random.randint(125, 625)}"
-                    f"\t{random.randint(1, 360)}")
-        res_str.append(f"{57 * 1000}\twin")
-        generate_level.write("\n".join(res_str))
-        generate_level.close()
-    try:
-        with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
-            reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
-            actions = list(reader)
-    except pygame.error as message:
-        print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
-        raise SystemExit(message)
+    auto_gen_level = True
+    next_action_time = 0
     if int(data_dict["lvl"]) == levels:
         bgrnd.kill()
         bgrnd = BossBackGround(50, 30)
         boss = Boss()
         pygame.mixer.music.load('data/mus_boss_fight.wav')
-    elif int(data_dict["lvl"]) % 2 == 0:
-        pygame.mixer.music.load('data/mus_meh_music.wav')
+        global tborder, bborder, rborder, lborder
+        tborder.kill()
+        rborder.kill()
+        lborder.kill()
+        tborder = Border(-1, 230, screen_size[0] + 1, 230)
+        lborder = Border(30, -1, 30, screen_size[1] + 1)
+        rborder = Border(screen_size[0] - 30, -1, screen_size[0] - 30, screen_size[1] + 1)
     else:
-        pygame.mixer.music.load('data/mus_acid_cool.wav')
+        auto_gen_level = False
+        if data_dict["lvl"] == "4":
+            make_level()
+        try:
+            with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
+                reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
+                actions = list(reader)
+        except pygame.error as message:
+            print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
+            raise SystemExit(message)
+        if int(data_dict["lvl"]) % 2 == 0:
+            pygame.mixer.music.load('data/mus_meh_music.wav')
+        else:
+            pygame.mixer.music.load('data/mus_acid_cool.wav')
     pygame.mixer.music.play(-1)
-
     active = [False, False, False, False]
     while running and state == "game":
         for event in pygame.event.get():
@@ -925,23 +950,35 @@ def game():
                 if event.key == pygame.K_x:
                     player.slow = False
         time += 1000 / FPS
-        performed = []
-        for action in actions:
-            if int(action["time"]) <= time:
-                if action["type"] == "star":
-                    Star(int(action["x"]), int(action["y"]), int(action["speed"]), int(action["rot_spd"]))
-                elif action["type"] == "b_hole":
-                    BlackHole(int(action["x"]), int(action["y"]), int(action["speed"]))
-                elif action["type"] == "l_blast":
-                    LaserBlaster(int(action["x"]), int(action["y"]))
-                elif action["type"] == "win":
-                    next_state = "win"
-                    fade.fade = -1
-                    fade.image = white
-                    fade.image.set_alpha(0)
-                performed.append(action)
-        for action in performed:
-            actions.remove(action)
+        if auto_gen_level:
+            if next_action_time <= time:
+                v = random.randint(0, 7)
+                if v == 0:
+                    BlackHole(random.randint(200, 824), random.randint(300, 568), random.randint(30, 120))
+                elif v in range(1, 3):
+                    LaserBlaster(random.choice((1174, -150)), random.randint(350, 668))
+                else:
+                    Star(random.randint(100, 924), -100, int((random.randint(115, 200) / 10) ** 2),
+                         random.randint(1, 360))
+                next_action_time += 1000
+        else:
+            performed = []
+            for action in actions:
+                if int(action["time"]) <= time:
+                    if action["type"] == "star":
+                        Star(int(action["x"]), int(action["y"]), int(action["speed"]), int(action["rot_spd"]))
+                    elif action["type"] == "b_hole":
+                        BlackHole(int(action["x"]), int(action["y"]), int(action["speed"]))
+                    elif action["type"] == "l_blast":
+                        LaserBlaster(int(action["x"]), int(action["y"]))
+                    elif action["type"] == "win":
+                        next_state = "win"
+                        fade.fade = -1
+                        fade.image = white
+                        fade.image.set_alpha(0)
+                    performed.append(action)
+            for action in performed:
+                actions.remove(action)
         bgrnd.update()
         sprite_group.update()
         boss_group.update()
