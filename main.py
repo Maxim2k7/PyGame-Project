@@ -643,8 +643,6 @@ class Boss(AnimatedSprite):
         self.orig_im = boss_body
         self.image = boss_body
         self.rect = self.image.get_rect()
-        self.color_key = self.image.get_at((screen_size[0] // 2, screen_size[0] // 2))
-        self.image.set_colorkey(self.color_key)
         self.rect.centerx = self.x
         self.rect.centery = self.y
         self.xsize = self.rect.w
@@ -672,7 +670,8 @@ class Boss(AnimatedSprite):
                                             (int(part.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
                                              int(part.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
         part.rect = part.image.get_rect()
-        part.image.set_colorkey(part.color_key)
+        if part != self:
+            part.image.set_colorkey(part.color_key)
         part.rect.centerx = part.x
         part.rect.centery = part.y
 
@@ -694,14 +693,19 @@ class Boss(AnimatedSprite):
                     if child.health <= 0:
                         # в случае уничтожения
                         child.health = 0
-                        child.orig_im = child.dead_im
+                        if child != self.children[2]:
+                            child.orig_im = child.dead_im
+                        else:
+                            child.frames[int(child.cur_frame)] = child.dead_im
                         pygame.mixer.Sound.stop(boss_explode_sound)
                         pygame.mixer.Sound.play(boss_explode_sound)
                         player.hit_t = time
                         player.shake_dist = 20
                 projectile.kill()
-                if child == self.children[2] and all([i.health <= 0 for i in self.children if i != self.children[2]]):
-                    child.anim_speed = 0
+                if all([i.health <= 0 for i in self.children if i != self.children[2]]) and\
+                        self.children[2].local_anim_speed != 0:
+                    self.children[2].local_anim_speed = 0
+                    self.children[2].frames[int(self.children[2].cur_frame)] = self.children[2].shield_down_im
 
 
 class BadGuy(AnimatedSprite):
@@ -724,7 +728,6 @@ class BadGuy(AnimatedSprite):
         self.ysize = self.rect.h
         self.health = 10
         self.local_anim_speed = 12
-        self.shield = True
 
 
 class Engine(AnimatedSprite):
