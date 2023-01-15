@@ -813,7 +813,7 @@ lborder = Border(-1, -1, -1, screen_size[1] + 1)
 rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 # информация о прогрессе игры
 levels = 5
-player_data_read = open("data/player_data.ini", mode="r")
+player_data_read = open("data/player_data.txt", mode="r")
 data = [list(i.split("=")) for i in player_data_read.read().split("\n")]
 data_dict = dict()
 for i in data:
@@ -848,7 +848,7 @@ def make_level(s, b, l):
 def start_screen():
     global logo, start, scene_objects, running, state, next_state, time
     logo = Logo(load_image('ttl_logo.png'))
-    start = PressZToStartText(load_image('ttl_start.png', 0))
+    start = PressZToStartText(load_image('ttl_start.png', -1))
     instr = Instructions()
     lvl = CurLevel()
     lvl_txt = CurLevelText()
