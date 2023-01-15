@@ -11,6 +11,7 @@ pygame.init()
 screen_size = (1024, 768)
 screen = pygame.display.set_mode(screen_size)
 screen_rect = (0, 0, screen_size[0], screen_size[1])
+pygame.display.set_caption("STAR THORNS")
 FPS = 30
 
 
@@ -135,18 +136,34 @@ class BackGround:
         self.pic1 = BackGroundPart(image)
         self.pic2 = BackGroundPart(image)
         self.y = 0
-        self.lim = screen_size[1]
+        self.lim = screen_size[0]
         self.vel = vel
 
     def update(self):
         self.y += self.vel / FPS
         self.y %= self.lim
         self.pic1.rect.y = int(self.y)
-        self.pic2.rect.y = int(self.y) - screen_size[1]
+        self.pic2.rect.y = int(self.y) - self.lim
 
     def kill(self):
         self.pic1.kill()
         self.pic2.kill()
+
+
+class BossBackGround(BackGround):
+    def __init__(self, vel, anim_speed):
+        super().__init__(bgrnd_boss_frames[0], vel)
+        self.frames = bgrnd_boss_frames
+        self.anim_speed = anim_speed
+        self.cur_frame = 0
+
+    def update(self):
+        super().update()
+        self.cur_frame += self.anim_speed / FPS
+        if self.cur_frame >= len(self.frames):
+            self.cur_frame -= (int(self.cur_frame) // len(self.frames)) * len(self.frames)
+        self.pic1.image = self.frames[int(self.cur_frame)]
+        self.pic2.image = self.frames[int(self.cur_frame)]
 
 
 # классы для начального экрана игры
@@ -247,16 +264,16 @@ class Player(AnimatedSprite):
         self.rect.centerx = self.x
         self.rect.centery = self.y
         if self.rect.colliderect(tborder.rect):
-            self.rect.y = 0
+            self.rect.y = tborder.rect.y + 1
             self.n_y = self.y = self.rect.centery
         elif self.rect.colliderect(bborder.rect):
-            self.rect.y = screen_size[1] - self.rect.size[1]
+            self.rect.y = bborder.rect.y - self.rect.size[1]
             self.n_y = self.y = self.rect.centery
         if self.rect.colliderect(lborder.rect):
-            self.rect.x = 0
+            self.rect.x = lborder.rect.x + 1
             self.n_x = self.x = self.rect.centerx
         elif self.rect.colliderect(rborder.rect):
-            self.rect.x = screen_size[0] - self.rect.size[0]
+            self.rect.x = rborder.rect.x - self.rect.size[0]
             self.n_x = self.x = self.rect.centerx
         if self.inv:
             self.image.set_alpha(255 - self.image.get_alpha())
@@ -275,22 +292,23 @@ class Player(AnimatedSprite):
         offset_x = int(projectile.rect.centerx - self.rect.centerx)
         offset_y = int(projectile.rect.centery - self.rect.centery)
         if self.mask.overlap(self.mask, (offset_x, offset_y)):
-            if not self.inv:
-                if health_bar.health > 1:
+            if not self.inv and self.alive():
+                global state, next_state, fade
+                if fade.fade == 0:
                     # уменьшить кол-во оставшихся жизней
-                    health_bar.health -= 1
-                    pygame.mixer.Sound.play(hit_sound)
-                    self.inv = True
-                    self.hit_t = time
-                    self.shake_dist = 20
-                else:
-                    # в случае поражения
-                    health_bar.health = 0
-                    global state, next_state, fade
-                    state = "game_over"
-                    next_state = "game"
-                    fade.fade = 0
-                    fade.image.set_alpha(0)
+                    if health_bar.health > 1:
+                        health_bar.health -= 1
+                        pygame.mixer.Sound.play(hit_sound)
+                        self.inv = True
+                        self.hit_t = time
+                        self.shake_dist = 20
+                    else:
+                        # в случае поражения
+                        health_bar.health = 0
+                        state = "game_over"
+                        next_state = "game"
+                        fade.fade = 0
+                        fade.image.set_alpha(0)
                 projectile.kill()
 
 
@@ -324,6 +342,7 @@ class Border(Sprite):
         else:
             self.image = pygame.Surface([x2 - x1, 1])
             self.rect = pygame.Rect(x1, y1, x2 - x1, 1)
+        self.image.set_alpha(0)
 
 
 # атакующая звезда, спукающаяся вниз и затем разрывающаяся
@@ -335,10 +354,11 @@ class Star(Sprite):
         self.color_key = star_image.get_at((0, 0))
         self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.centery = y
+        self.boss_fight = data_dict["lvl"] == str(levels)
         self.x = x
-        self.y = y
+        self.y = y if not self.boss_fight else screen_size[1] - y
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
         self.vel = vel
         self.rot_spd = rot_spd
         self.rot = 0
@@ -348,7 +368,7 @@ class Star(Sprite):
     # кружение и движение вниз
     def update(self):
         # кружение и движение вниз
-        self.y += self.vel / FPS
+        self.y += self.vel / FPS if not self.boss_fight else -self.vel / FPS
         self.rot += self.rot_spd / FPS
         if self.rot >= 360:
             self.rot -= (int(self.rot) // 360) * 360
@@ -374,6 +394,8 @@ class Star(Sprite):
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
         player.check_hit(self)
+        if self.boss_fight:
+            boss.check_hit(self)
 
 
 # вражеские пули, которые выпускают другие объекты
@@ -392,6 +414,7 @@ class ShotPiece(Sprite):
         self.y = y
         self.vel = vel
         self.rot = rot / 360 * 2 * math.pi
+        self.boss_fight = data_dict["lvl"] == str(levels)
 
     def update(self):
         self.vel += 800 / FPS
@@ -402,6 +425,8 @@ class ShotPiece(Sprite):
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
         player.check_hit(self)
+        if self.boss_fight:
+            boss.check_hit(self)
 
 
 class BlackHole(Sprite):
@@ -414,10 +439,10 @@ class BlackHole(Sprite):
         self.y = y
         self.spd = spd
         self.alph = 0
-        self.image = load_image("blackhole_image.png")
+        self.color_key = (0, 0, 0, 255)
+        self.make_blackhole()
         self.image = pygame.transform.scale(self.image, (1, 1))
         self.mask = pygame.mask.from_surface(self.image)
-        self.color_key = self.image.get_at((0, 0))
         self.image.set_alpha(0)
         self.rect = self.image.get_rect()
         self.rect.centerx = int(self.x)
@@ -608,12 +633,131 @@ class LaserBlasterHandle(Sprite):
         self.rect.centery = int(self.blstr.y)
 
 
+class Boss(AnimatedSprite):
+    def __init__(self):
+        super().__init__(boss_body, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        scene_objects.append(self)
+        self.x = screen_size[0] // 2
+        self.y = screen_size[1] // 2
+        self.rot = 0
+        self.orig_im = boss_body
+        self.image = boss_body
+        self.rect = self.image.get_rect()
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.xsize = self.rect.w
+        self.ysize = self.rect.h
+        self.children = [Engine(boss_engine1, boss_engine1_inv, boss_engine1_dead),
+                         Engine(boss_engine2, boss_engine2_inv, boss_engine2_dead), BadGuy()]
+
+    def update(self):
+        self.sin_pulse(self, self.orig_im)
+        self.children[2].cur_frame += self.children[2].local_anim_speed / FPS
+        self.children[2].cur_frame %= len(self.children[2].frames)
+        self.children[2].image = self.children[2].frames[int(self.children[2].cur_frame)]
+        self.children[2].image.set_colorkey(self.children[2].color_key)
+        for child in self.children:
+            self.sin_pulse(child, child.orig_im if child != self.children[2] else child.image)
+        if fade.fade == 0 and self.children[2].health == 0:
+            global next_state
+            next_state = "win"
+            fade.fade = -1
+            fade.image = white
+            fade.image.set_alpha(0)
+
+    def sin_pulse(self, part, orig_im):
+        part.image = pygame.transform.scale(orig_im,
+                                            (int(part.xsize * (math.sin(time / 1000) / 2 + 20.5) / 20),
+                                             int(part.ysize * (math.sin(time / 1000) / 2 + 20.5) / 20)))
+        part.rect = part.image.get_rect()
+        if part != self:
+            part.image.set_colorkey(part.color_key)
+        part.rect.centerx = part.x
+        part.rect.centery = part.y
+
+    def kill(self):
+        for child in self.children:
+            child.kill()
+        super().kill()
+
+    def check_hit(self, projectile):
+        for child in self.children:
+            if pygame.sprite.collide_mask(child, projectile) and child.health > 0 and projectile.alive():
+                if child != self.children[2] or (child == self.children[2] and
+                                                 all([i.health <= 0 for i in self.children if i != self.children[2]])):
+                    # уменьшить кол-во жизни части босса
+                    self.sin_pulse(child, child.inv_im)
+                    pygame.mixer.Sound.stop(boss_hit_sound)
+                    pygame.mixer.Sound.play(boss_hit_sound)
+                    child.health -= 1
+                    if child.health <= 0:
+                        # в случае уничтожения
+                        child.health = 0
+                        if child != self.children[2]:
+                            child.orig_im = child.dead_im
+                        else:
+                            child.frames[int(child.cur_frame)] = child.dead_im
+                        pygame.mixer.Sound.stop(boss_explode_sound)
+                        pygame.mixer.Sound.play(boss_explode_sound)
+                        player.hit_t = time
+                        player.shake_dist = 20
+                projectile.kill()
+                if all([i.health <= 0 for i in self.children if i != self.children[2]]) and\
+                        self.children[2].local_anim_speed != 0:
+                    self.children[2].local_anim_speed = 0
+                    self.children[2].frames[int(self.children[2].cur_frame)] = self.children[2].shield_down_im
+
+
+class BadGuy(AnimatedSprite):
+    def __init__(self):
+        super().__init__(boss_enemie, 3, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        self.x = screen_size[0] // 2
+        self.y = screen_size[1] // 2
+        self.rot = 0
+        self.shield_down_im = boss_enemie_shield_down
+        self.inv_im = boss_enemie_inv
+        self.dead_im = boss_enemie_dead
+        self.image = self.frames[0]
+        self.rect = self.image.get_rect()
+        self.color_key = self.image.get_at((0, 0))
+        self.image.set_colorkey(self.color_key)
+        self.mask = pygame.mask.from_surface(boss_enemie_mask)
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.xsize = self.rect.w
+        self.ysize = self.rect.h
+        self.health = 10
+        self.local_anim_speed = 12
+
+
+class Engine(AnimatedSprite):
+    def __init__(self, image, inv_im, dead_im):
+        super().__init__(image, 1, 1, screen_size[0] // 2, screen_size[1] // 2, boss_group, 0)
+        self.x = screen_size[0] // 2
+        self.y = screen_size[1] // 2
+        self.rot = 0
+        self.orig_im = image
+        self.inv_im = inv_im
+        self.dead_im = dead_im
+        self.image = image
+        self.color_key = self.image.get_at((0, 0))
+        self.image.set_colorkey(self.color_key)
+        self.mask = pygame.mask.from_surface(self.image)
+        self.rect = self.image.get_rect()
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.xsize = self.rect.w
+        self.ysize = self.rect.h
+        self.health = 10
+
+
 # инициализация переменных в игре
 # визуальная часть
 all_sprites = SpriteGroup()
 sprite_group = SpriteGroup()
 player_group = SpriteGroup()
 enemies_group = SpriteGroup()
+boss_group = SpriteGroup()
 overlap_group = SpriteGroup()
 running = True
 state = "start_screen"
@@ -621,7 +765,7 @@ next_state = "game"
 time = 0
 black = pygame.transform.scale(load_image('fade_transition.png'), screen_size)
 white = pygame.transform.scale(load_image('fade_transition2.png'), screen_size)
-bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+bgrnd = BackGround(load_image('bgrnd_space.png'), 50)
 fade = FadeTransition(black, 256)
 star_image = load_image("star_normal.png")
 star_piece_image = load_image("star_piece.png")
@@ -629,21 +773,37 @@ instr_image = load_image("ttl_controls.png", -1)
 laser_blaster_handle_image = load_image("laser_blaster_handle.png")
 laser_blaster_image = load_image("laser_blaster_idle.png")
 laser_blaster_anim_sheet = load_image("laser_blaster_anim_sheet.png")
+boss_body = load_image("boss_back_part.png")
+boss_enemie = load_image("boss_cockpit.png")
+boss_enemie_inv = load_image("boss_cockpit_inv.png")
+boss_enemie_dead = load_image("boss_cockpit_dead.png")
+boss_enemie_shield_down = load_image("boss_cockpit_no_shield.png")
+boss_enemie_mask = load_image("boss_cockpit_mask.png", -1)
+boss_engine1 = load_image("boss_engine1.png")
+boss_engine1_inv = load_image("boss_engine1_inv.png")
+boss_engine1_dead = load_image("boss_engine1_dead.png")
+boss_engine2 = load_image("boss_engine2.png")
+boss_engine2_inv = load_image("boss_engine2_inv.png")
+boss_engine2_dead = load_image("boss_engine2_dead.png")
+bgrnd_boss_frames = [load_image(f"boss_background_anim/bgrnd_space_boss{i}.png") for i in range(60)]
 clock = pygame.time.Clock()
 logo = None
 start = None
 player = None
 health_bar = None
+boss = None
 # звуки
 start_sound = pygame.mixer.Sound("data/snd_start.ogg")
 hit_sound = pygame.mixer.Sound("data/snd_hit.ogg")
-star_explode_sound = pygame.mixer.Sound("data/snd_starexplode.ogg")
+star_explode_sound = pygame.mixer.Sound("data/snd_star_explode.ogg")
 die_sound = pygame.mixer.Sound("data/snd_die.ogg")
 revive_sound = pygame.mixer.Sound("data/snd_revive.ogg")
-you_won_sound = pygame.mixer.Sound("data/snd_youwon.ogg")
+you_won_sound = pygame.mixer.Sound("data/snd_you_won.ogg")
 win_sound = pygame.mixer.Sound("data/snd_win.ogg")
-del_sound = pygame.mixer.Sound("data/snd_deletedata.ogg")
+del_sound = pygame.mixer.Sound("data/snd_delete_data.ogg")
 laser_sound = pygame.mixer.Sound("data/snd_laser.ogg")
+boss_hit_sound = pygame.mixer.Sound("data/snd_boss_hit.ogg")
+boss_explode_sound = pygame.mixer.Sound("data/snd_boss_explode.ogg")
 # контроль объектов в сцене
 scene_objects = []
 camera = Camera()
@@ -652,13 +812,36 @@ bborder = Border(-1, screen_size[1] + 1, screen_size[0] + 1, screen_size[1] + 1)
 lborder = Border(-1, -1, -1, screen_size[1] + 1)
 rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 # информация о прогрессе игры
-levels = 4
+levels = 5
 player_data_read = open("data/player_data.ini", mode="r")
 data = [list(i.split("=")) for i in player_data_read.read().split("\n")]
 data_dict = dict()
 for i in data:
     data_dict[i[0]] = i[1]
 player_data_read.close()
+
+
+def make_level(s, b, l):
+    # s - крайнее правое возвожное значение для рандома, так же влияет на шанс появления звезды
+    # b - крайнее правое невкл. значение для получения чёрной дыры и крайнее левое вкл. значение для получения лазера
+    # l - крайнее правое невкл. значение для получение лазера
+    generate_level = open(f'data/lvl_0{data_dict["lvl"]}.csv', mode="w")
+    res_str = ["time\ttype\tx\ty\tspeed\trot_spd"]
+    for i in range(35):
+        v = random.randint(0, s)
+        if v in range(b):
+            res_str.append(
+                f"{i * 1500}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}"
+                f"\t{random.randint(30, 120)}")
+        elif v in range(b, l):
+            res_str.append(f"{i * 1500}\tl_blast\t{random.choice((1174, -150))}\t{random.randint(100, 668)}")
+        else:
+            res_str.append(
+                f"{i * 1500}\tstar\t{random.randint(100, 924)}\t-100\t{int((random.randint(115, 220) / 10) ** 2)}"
+                f"\t{random.randint(1, 360)}")
+    res_str.append(f"{38 * 1500}\twin")
+    generate_level.write("\n".join(res_str))
+    generate_level.close()
 
 
 # инициализация и воспроизведение работы экрана запуска игры
@@ -721,43 +904,42 @@ def start_screen():
 
 # инициализация и воспроизведение работы игры
 def game():
-    global player, health_bar, scene_objects, running, state, next_state, time, data_dict, levels, fade
+    global player, health_bar, scene_objects, boss, running, state, next_state, time, data_dict, levels, fade, bgrnd
     player = Player(load_image("player_ship_anim_sheet.png", -1), 4, 1,
                     screen_size[0] // 2, screen_size[1] // 2, player_group, 6, 400, 1200,
                     pygame.mask.from_surface(load_image("player_ship.png", -1)))
-    health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, sprite_group)
+    health_bar = HealthBar(load_image("health_bar_anim_sheet.png"), 3, 2, 20, 20, player_group)
     scene_objects = [health_bar]
-    if data_dict["lvl"] == "4":
-        generate_level = open(f'data/lvl_0{data_dict["lvl"]}.csv', mode="w")
-        res_str = ["time\ttype\tx\ty\tspeed\trot_spd"]
-        for i in range(50):
-            v = random.randint(0, 7)
-            if v == 0:
-                res_str.append(
-                    f"{i * 1000}\tb_hole\t{random.randint(200, 824)}\t{random.randint(200, 568)}"
-                    f"\t{random.randint(30, 120)}")
-            elif v in range(1, 3):
-                res_str.append(f"{i * 1000}\tl_blast\t{random.choice((1174, -150))}\t{random.randint(200, 568)}")
-            else:
-                res_str.append(
-                    f"{i * 1000}\tstar\t{random.randint(100, 924)}\t-100\t{random.randint(125, 625)}"
-                    f"\t{random.randint(1, 360)}")
-        res_str.append(f"{57 * 1000}\twin")
-        generate_level.write("\n".join(res_str))
-        generate_level.close()
-    try:
-        with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
-            reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
-            actions = list(reader)
-    except pygame.error as message:
-        print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
-        raise SystemExit(message)
-    if int(data_dict["lvl"]) % 2 == 0:
-        pygame.mixer.music.load('data/mus_meh_music.wav')
+    auto_gen_level = True
+    next_action_time = 0
+    if int(data_dict["lvl"]) == levels:
+        bgrnd.kill()
+        bgrnd = BossBackGround(50, 30)
+        boss = Boss()
+        pygame.mixer.music.load('data/mus_boss_fight.wav')
+        global tborder, bborder, rborder, lborder
+        tborder.kill()
+        rborder.kill()
+        lborder.kill()
+        tborder = Border(-1, 230, screen_size[0] + 1, 230)
+        lborder = Border(30, -1, 30, screen_size[1] + 1)
+        rborder = Border(screen_size[0] - 30, -1, screen_size[0] - 30, screen_size[1] + 1)
     else:
-        pygame.mixer.music.load('data/mus_acid_cool.wav')
+        auto_gen_level = False
+        if data_dict["lvl"] == "4":
+            make_level(7, 1, 3)
+        try:
+            with open(f'data/lvl_0{data_dict["lvl"]}.csv', encoding="utf8") as csvfile:
+                reader = csv.DictReader(csvfile, delimiter='\t', quotechar='"')
+                actions = list(reader)
+        except pygame.error as message:
+            print('Не удаётся загрузить:', f'data/lvl_0{data_dict["lvl"]}.csv')
+            raise SystemExit(message)
+        if int(data_dict["lvl"]) % 2 == 0:
+            pygame.mixer.music.load('data/mus_meh_music.wav')
+        else:
+            pygame.mixer.music.load('data/mus_acid_cool.wav')
     pygame.mixer.music.play(-1)
-
     active = [False, False, False, False]
     while running and state == "game":
         for event in pygame.event.get():
@@ -792,25 +974,38 @@ def game():
                 if event.key == pygame.K_x:
                     player.slow = False
         time += 1000 / FPS
-        performed = []
-        for action in actions:
-            if int(action["time"]) <= time:
-                if action["type"] == "star":
-                    Star(int(action["x"]), int(action["y"]), int(action["speed"]), int(action["rot_spd"]))
-                elif action["type"] == "b_hole":
-                    BlackHole(int(action["x"]), int(action["y"]), int(action["speed"]))
-                elif action["type"] == "l_blast":
-                    LaserBlaster(int(action["x"]), int(action["y"]))
-                elif action["type"] == "win":
-                    next_state = "win"
-                    fade.fade = -1
-                    fade.image = white
-                    fade.image.set_alpha(0)
-                performed.append(action)
-        for action in performed:
-            actions.remove(action)
+        if auto_gen_level:
+            if next_action_time <= time:
+                v = random.randint(0, 7)
+                if v == 0:
+                    BlackHole(random.randint(200, 824), random.randint(300, 568), random.randint(30, 120))
+                elif v in range(1, 3):
+                    LaserBlaster(random.choice((1174, -150)), random.randint(350, 668))
+                else:
+                    Star(random.randint(100, 924), -100, int((random.randint(115, 195) / 10) ** 2),
+                         random.randint(1, 360))
+                next_action_time += 1000
+        else:
+            performed = []
+            for action in actions:
+                if int(action["time"]) <= time:
+                    if action["type"] == "star":
+                        Star(int(action["x"]), int(action["y"]), int(action["speed"]), int(action["rot_spd"]))
+                    elif action["type"] == "b_hole":
+                        BlackHole(int(action["x"]), int(action["y"]), int(action["speed"]))
+                    elif action["type"] == "l_blast":
+                        LaserBlaster(int(action["x"]), int(action["y"]))
+                    elif action["type"] == "win":
+                        next_state = "win"
+                        fade.fade = -1
+                        fade.image = white
+                        fade.image.set_alpha(0)
+                    performed.append(action)
+            for action in performed:
+                actions.remove(action)
         bgrnd.update()
         sprite_group.update()
+        boss_group.update()
         player_group.update()
         enemies_group.update()
         overlap_group.update()
@@ -819,6 +1014,7 @@ def game():
                 camera.apply(obj)
         screen.fill(pygame.Color("black"))
         sprite_group.draw(screen)
+        boss_group.draw(screen)
         player_group.draw(screen)
         enemies_group.draw(screen)
         overlap_group.draw(screen)
@@ -875,7 +1071,7 @@ def game_over():
     fade.fade = 1
     broken_ship.kill()
     player.kill()
-    bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+    bgrnd = BackGround(load_image('bgrnd_space.png'), 50)
     fade.spd = 256
     for obj in scene_objects:
         obj.kill()
@@ -928,7 +1124,7 @@ def game_won():
     fade.fade = 1
     for obj in scene_objects:
         obj.kill()
-    bgrnd = BackGround(pygame.transform.scale(load_image('bgrnd_space.png'), screen_size), 50)
+    bgrnd = BackGround(load_image('bgrnd_space.png'), 50)
     fade.spd = 256
     for obj in scene_objects:
         obj.kill()
