@@ -813,7 +813,7 @@ lborder = Border(-1, -1, -1, screen_size[1] + 1)
 rborder = Border(screen_size[0] + 1, -1, screen_size[0] + 1, screen_size[1] + 1)
 # информация о прогрессе игры
 levels = 5
-player_data_read = open("data/player_data.txt", mode="r")
+player_data_read = open("data/player_data.ini", mode="r")
 data = [list(i.split("=")) for i in player_data_read.read().split("\n")]
 data_dict = dict()
 for i in data:
@@ -1142,7 +1142,7 @@ if __name__ == "__main__":
             game_won()
     pygame.quit()
     # сохранение всех изменённых данных
-    player_data_write = open("data/player_data.txt", mode="w")
+    player_data_write = open("data/player_data.ini", mode="w")
     res_str = []
     for k, v in data_dict.items():
         res_str.append(k + "=" + v)
