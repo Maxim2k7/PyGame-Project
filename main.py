@@ -1142,7 +1142,7 @@ if __name__ == "__main__":
             game_won()
     pygame.quit()
     # сохранение всех изменённых данных
-    player_data_write = open("data/player_data.ini", mode="w")
+    player_data_write = open("data/player_data.txt", mode="w")
     res_str = []
     for k, v in data_dict.items():
         res_str.append(k + "=" + v)
